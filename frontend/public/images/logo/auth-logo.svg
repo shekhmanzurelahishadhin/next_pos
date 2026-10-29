@@ -1,0 +1,7 @@
+<svg width="240" height="48" viewBox="0 0 160 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="32" height="32" rx="8" fill="#465FFF"/>
+  <path d="M9 7.5h14l2.5 5.5h-19z" fill="#FFFFFF"/>
+  <path d="M12.5 7.5l-1 5.5M16 7.5v5.5M19.5 7.5l1 5.5" stroke="#465FFF" stroke-width="1"/>
+  <path fill-rule="evenodd" clip-rule="evenodd" d="M8 14.5h16v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-10zm6 4h4v7h-4v-7z" fill="#FFFFFF" fill-opacity="0.9"/>
+  <text x="40" y="21.5" font-family="Outfit, 'Segoe UI', Arial, sans-serif" font-size="16" font-weight="600" fill="#FFFFFF">Multibrand <tspan fill="#9CB9FF">POS</tspan></text>
+</svg>
