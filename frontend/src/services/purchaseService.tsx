@@ -3,7 +3,6 @@ import { api } from "@/lib/api";
 export type Option = { value: string; label: string };
 
 export interface PurchaseFormOptions {
-  next_po_no: string;
   cash_due: Option[];
   purchase_type: Option[];
   payment_type: Option[];

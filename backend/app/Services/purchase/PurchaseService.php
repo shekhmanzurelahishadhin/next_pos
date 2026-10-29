@@ -78,7 +78,7 @@ class PurchaseService
         ])->findOrFail($id);
     }
 
-    // Dropdown lists for the purchase form and the PO number it will get
+    // Dropdown lists for the purchase form
     public function formOptions(): array
     {
         $lookup = fn(string $type) => Lookup::where('type', $type)->where('status', 1)->orderBy('id')
@@ -86,7 +86,6 @@ class PurchaseService
             ->map(fn($row) => ['value' => (string) $row->code, 'label' => $row->name]);
 
         return [
-            'next_po_no'    => $this->scrollCodes->previewNumber('purchase_order'),
             'cash_due'      => $lookup('cash_due'),
             'purchase_type' => $lookup('local_import'),
             'payment_type'  => $lookup('payment_type'),

@@ -1,10 +1,11 @@
 "use client";
-import { Suspense, useEffect } from "react";
+import { Suspense, useCallback, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import AccessRoute from "@/routes/AccessRoute";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import Label from "@/components/form/Label";
-import Select from "@/components/form/Select";
+import ReactSelect from "@/components/form/ReactSelect";
+import DatePicker from "@/components/form/date-picker";
 import Button from "@/components/ui/button/Button";
 import Autocomplete from "@/components/form/Autocomplete";
 import { FiPlus, FiTrash } from "@/icons/index";
@@ -42,6 +43,10 @@ function PurchaseForm() {
   const f = usePurchaseForm(editId);
   const { header, entry, items, options } = f;
   const storeLocked = items.length > 0; // parts_bazar locks the store once items are in the grid
+  const { setHeaderField } = f;
+
+  // stable function, so the date picker is not rebuilt on every render
+  const changeDate = useCallback((_dates: Date[], dateStr: string) => setHeaderField("purchase_date", dateStr), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     document.title = `${editId ? "Edit Purchase" : "Purchase"} | Multibrand POS`;
@@ -69,25 +74,20 @@ function PurchaseForm() {
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <Section title="Order No">
             <div className="space-y-2.5">
-              <Row label="PO No">
-                <div className="flex h-9 items-center rounded-md bg-gray-100 px-3 text-sm font-semibold text-brand-600 dark:bg-gray-800 dark:text-brand-400">
-                  {f.poNo || "..."}
-                </div>
-              </Row>
               <Row label="Purchase Date" required>
-                <input type="date" value={header.purchase_date} onChange={(e) => f.setHeaderField("purchase_date", e.target.value)} className={inputClass} />
+                <DatePicker id="purchase_date" defaultDate={header.purchase_date} onChange={changeDate} placeholder="Select date" />
               </Row>
               <Row label="Cash / Due" required>
-                <Select options={options?.cash_due ?? []} placeholder="Select" value={header.cash_due} onChange={(e) => f.changeCashDue(e.target.value)} />
+                <ReactSelect options={options?.cash_due ?? []} placeholder="Select" value={header.cash_due} onChange={(v) => f.changeCashDue(String(v ?? ""))} />
               </Row>
               <Row label="Local / Import" required>
-                <Select options={options?.purchase_type ?? []} placeholder="Select" value={header.purchase_type} onChange={(e) => f.setHeaderField("purchase_type", e.target.value)} />
+                <ReactSelect options={options?.purchase_type ?? []} placeholder="Select" value={header.purchase_type} onChange={(v) => f.setHeaderField("purchase_type", String(v ?? ""))} />
               </Row>
               <Row label="Store" required>
-                <Select options={f.stores} placeholder="Select" value={header.store_id} disabled={storeLocked} onChange={(e) => f.changeStore(e.target.value)} />
+                <ReactSelect options={f.stores} placeholder="Select" value={header.store_id} isDisabled={storeLocked} onChange={(v) => f.changeStore(String(v ?? ""))} />
               </Row>
               <Row label="Ship By">
-                <Select options={options?.ship_by ?? []} placeholder="Select" value={header.ship_by} onChange={(e) => f.setHeaderField("ship_by", e.target.value)} />
+                <ReactSelect options={options?.ship_by ?? []} placeholder="Select" value={header.ship_by} onChange={(v) => f.setHeaderField("ship_by", String(v ?? ""))} />
               </Row>
               <Row label="Supplier" required>
                 <Autocomplete
@@ -114,7 +114,7 @@ function PurchaseForm() {
           <Section title="Received Information">
             <div className="space-y-2.5">
               <Row label="Payment Type" required>
-                <Select options={options?.payment_type ?? []} value={header.payment_type} disabled onChange={() => {}} />
+                <ReactSelect options={options?.payment_type ?? []} value={header.payment_type} isDisabled isClearable={false} onChange={() => {}} />
               </Row>
               <Row label="Payment Amount">
                 <input
@@ -164,8 +164,8 @@ function PurchaseForm() {
               </thead>
               <tbody>
                 <tr className="align-top">
-                  <td className="w-[130px] px-1">
-                    <Select options={f.locations} placeholder="Select" value={entry.location_id} onChange={(e) => f.setEntryField("location_id", e.target.value)} />
+                  <td className="w-[180px] px-1">
+                    <ReactSelect options={f.locations} placeholder="Select" value={entry.location_id} onChange={(v) => f.setEntryField("location_id", String(v ?? ""))} />
                   </td>
                   <td className="w-[170px] px-1"><input readOnly tabIndex={-1} value={entry.product?.name ?? ""} className={readOnlyClass} /></td>
                   <td className="w-[150px] px-1">

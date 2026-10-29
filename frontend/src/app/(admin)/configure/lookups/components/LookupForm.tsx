@@ -138,7 +138,7 @@ export function LookupForm({
           />
         </div>
         {mode === "create" && (
-          <div>
+          <div className="space-y-3">
             <div>
               <Label htmlFor="is_new" required>Is New Type</Label>
 

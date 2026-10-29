@@ -68,7 +68,6 @@ export const usePurchaseForm = (editId: number | null) => {
   const [items, setItems] = useState<PurchaseItem[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [poNo, setPoNo] = useState("");
   const [savedId, setSavedId] = useState<number | null>(null); // opens the PO voucher after saving
   const partNumberRef = useRef<HTMLInputElement>(null);
 
@@ -78,8 +77,7 @@ export const usePurchaseForm = (editId: number | null) => {
   const loadOptions = useCallback(async () => {
     const result = await purchaseService.getFormOptions();
     setOptions(result);
-    if (!editId) setPoNo(result.next_po_no);
-  }, [editId]);
+  }, []);
 
   const loadLocations = async (storeId: string) => {
     setLocations([]);
@@ -99,7 +97,6 @@ export const usePurchaseForm = (editId: number | null) => {
   useEffect(() => {
     if (!editId) return;
     purchaseService.getPurchase(editId).then(async (p) => {
-      setPoNo(p.po_no);
       setHeader({
         purchase_date: String(p.purchase_date).slice(0, 10),
         cash_due: String(p.cash_due ?? ""),
@@ -291,10 +288,7 @@ export const usePurchaseForm = (editId: number | null) => {
         ? await purchaseService.updatePurchase(editId, payload)
         : await purchaseService.createPurchase(payload);
       toast.success(editId ? "Purchase updated successfully." : "Data saved successfully.");
-      if (!editId) {
-        resetForm();
-        loadOptions();
-      }
+      if (!editId) resetForm();
       setSavedId(saved.id);
     } catch (err: any) {
       const errors = err?.response?.data?.errors;
@@ -310,7 +304,7 @@ export const usePurchaseForm = (editId: number | null) => {
   };
 
   return {
-    options, stores, locations, header, entry, items, error, saving, poNo, savedId, grandTotal, entryTotals, partNumberRef,
+    options, stores, locations, header, entry, items, error, saving, savedId, grandTotal, entryTotals, partNumberRef,
     setHeaderField, setEntryField, changeStore, changeCashDue, changePaymentAmount, selectSupplier, selectProduct,
     canSearchSupplier, canSearchProduct, addItem, removeItem, savePurchase, setSavedId,
   };
