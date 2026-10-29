@@ -32,8 +32,8 @@ class SellPrice extends Model
         'market_price' => 'decimal:2',
         'discount' => 'decimal:2',
         'is_active' => 'boolean',
-        'start_date' => 'date',
-        'end_date' => 'date',
+        'start_date' => 'date:Y-m-d',
+        'end_date' => 'date:Y-m-d',
     ];
 
     public function product()

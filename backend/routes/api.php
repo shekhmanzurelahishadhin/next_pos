@@ -26,6 +26,7 @@ use App\Http\Controllers\api\sales\SaleController;
 use App\Http\Controllers\api\sales\SaleDetailController;
 use App\Http\Controllers\api\softConfig\ProductController;
 use App\Http\Controllers\api\softConfig\PurchasePriceController;
+use App\Http\Controllers\api\softConfig\ProductPriceController;
 use App\Helpers\ApiResponse;
 
 
@@ -194,6 +195,14 @@ Route::prefix('v1')->group(function () {
             // Scroll Number Setup Route (month / year / prefix codes)
             Route::get('scroll-codes', [ScrollCodeController::class, 'index']);
             Route::put('scroll-codes', [ScrollCodeController::class, 'update']);
+
+            // Purchase Price / Sale Price of products
+            Route::prefix('product-prices')->group(function () {
+                Route::get('/', [ProductPriceController::class, 'index']);
+                Route::post('/{product}/purchase-price', [ProductPriceController::class, 'addPurchasePrice']);
+                Route::post('/{product}/sell-price', [ProductPriceController::class, 'addSellPrice']);
+                Route::get('/{product}/sell-price-history', [ProductPriceController::class, 'sellPriceHistory']);
+            });
         });
 
         // Purchase Route

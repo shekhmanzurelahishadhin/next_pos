@@ -11,7 +11,7 @@ import Autocomplete from "@/components/form/Autocomplete";
 import { FiPlus, FiTrash } from "@/icons/index";
 import { formatMoney } from "@/lib/format";
 import { purchaseService } from "@/services/purchaseService";
-import { usePurchaseForm } from "./hooks/usePurchaseForm";
+import { LOCAL, usePurchaseForm } from "./hooks/usePurchaseForm";
 import { PurchaseVoucher } from "../components/PurchaseVoucher";
 
 const inputClass =
@@ -62,6 +62,7 @@ function PurchaseForm() {
       onChange={(e) => f.setEntryField(field, e.target.value)}
       onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), f.addItem())}
       onWheel={(e) => (e.target as HTMLInputElement).blur()}
+      disabled={field === "per_kg" && header.purchase_type === LOCAL}
       className={`${inputClass} text-right`}
     />
   );
@@ -81,7 +82,7 @@ function PurchaseForm() {
                 <ReactSelect options={options?.cash_due ?? []} placeholder="Select" value={header.cash_due} onChange={(v) => f.changeCashDue(String(v ?? ""))} />
               </Row>
               <Row label="Local / Import" required>
-                <ReactSelect options={options?.purchase_type ?? []} placeholder="Select" value={header.purchase_type} onChange={(v) => f.setHeaderField("purchase_type", String(v ?? ""))} />
+                <ReactSelect options={options?.purchase_type ?? []} placeholder="Select" value={header.purchase_type} onChange={(v) => f.changePurchaseType(String(v ?? ""))} />
               </Row>
               <Row label="Store" required>
                 <ReactSelect options={f.stores} placeholder="Select" value={header.store_id} isDisabled={storeLocked} onChange={(v) => f.changeStore(String(v ?? ""))} />

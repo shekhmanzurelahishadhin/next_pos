@@ -504,6 +504,24 @@ class ModuleMenuPermissionSeeder extends Seeder
             );
         }
 
+        // Purchase Price and Sale Price of products
+        foreach (['Purchase Price' => 'purchase-price', 'Sale Price' => 'sell-price'] as $menuName => $slug) {
+            $priceMenu = Menu::updateOrCreate(
+                ['name' => $menuName, 'module_id' => $softConfigModule->id],
+                ['slug' => $slug]
+            );
+            foreach (['view', 'create'] as $action) {
+                Permission::updateOrCreate(
+                    ['name' => "{$slug}.{$action}", 'guard_name' => 'web'],
+                    [
+                        'module_id'   => $softConfigModule->id,
+                        'menu_id'     => $priceMenu->id,
+                        'sub_menu_id' => null,
+                    ]
+                );
+            }
+        }
+
         // Lookup
         $lookupMenu = Menu::updateOrCreate(
             ['name' => 'Lookup', 'module_id' => $softConfigModule->id],

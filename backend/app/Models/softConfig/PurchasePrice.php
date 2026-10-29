@@ -16,17 +16,20 @@ class PurchasePrice extends Model
         'po_no',
         'product_id',
         'price',
+        'original_price',
+        'vat_percent',
         'qty',
         'month',
         'year',
         'date',
+        'is_active',
         'created_by',
         'updated_by',
         'deleted_by'
     ];
 
     protected $casts = [
-        'date' => 'date',
+        'date' => 'date:Y-m-d',
         'price' => 'float',
         'qty' => 'float',
         'month' => 'integer',

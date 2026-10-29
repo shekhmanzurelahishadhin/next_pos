@@ -73,6 +73,8 @@ const navItems: NavItem[] = [
       { name: "Store Location", path: "/configure/locations", requiredPermissions: ["location.view", "location.create", "location.edit", "location.delete"] },
       { name: "PP/SP Setup", path: "/configure/pp-sp-setup", requiredPermissions: ["pp-sp-setup.view", "pp-sp-setup.create", "pp-sp-setup.edit", "pp-sp-setup.delete"] },
       { name: "Scroll Number Setup", path: "/configure/scroll-setup", requiredPermissions: ["scroll-setup.view", "scroll-setup.edit"] },
+      { name: "Purchase Price", path: "/configure/purchase-price", requiredPermissions: ["purchase-price.view", "purchase-price.create"] },
+      { name: "Sale Price", path: "/configure/sale-price", requiredPermissions: ["sell-price.view", "sell-price.create"] },
     ],
   },
   {

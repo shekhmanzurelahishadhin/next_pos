@@ -12,7 +12,7 @@ import {
   getFilteredRowModel,
   RowData,
 } from "@tanstack/react-table";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Table,
   TableHeader,
@@ -71,6 +71,36 @@ export function DataTable<TData, TValue>({
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState({});
 
+  // Filter values wait here and are applied together when the user clicks outside the table
+  const tableBoxRef = useRef<HTMLDivElement>(null);
+  const pendingFilters = useRef<Record<string, string>>({});
+  const appliedFilters = useRef<Record<string, string>>({});
+
+  const stageFilter = useCallback((columnId: string, value: string) => {
+    pendingFilters.current[columnId] = value;
+  }, []);
+
+  const applyFilters = useCallback(() => {
+    const pending = pendingFilters.current;
+    pendingFilters.current = {};
+    Object.entries(pending).forEach(([columnId, value]) => {
+      if ((appliedFilters.current[columnId] ?? "") === value) return;
+      appliedFilters.current[columnId] = value;
+      onColumnFilterChange?.(columnId, value);
+    });
+  }, [onColumnFilterChange]);
+
+  useEffect(() => {
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // the dropdown list of a filter opens outside the table, so a click on it does not count
+      if (tableBoxRef.current?.contains(target) || target.closest(".dt-filter__menu")) return;
+      applyFilters();
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [applyFilters]);
+
   const table = useReactTable({
     data,
     columns,
@@ -104,7 +134,7 @@ export function DataTable<TData, TValue>({
         loading={loading}
       />
 
-      <div className="rounded-md border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03] overflow-hidden">
+      <div ref={tableBoxRef} className="rounded-md border border-gray-200 bg-white dark:border-white/[0.05] dark:bg-white/[0.03] overflow-hidden">
 
         {/* Single Table Container with Sticky Header; height keeps the pagination below in view */}
         <div className="overflow-auto max-h-[calc(100vh-250px)] custom-scrollbar">
@@ -220,7 +250,8 @@ export function DataTable<TData, TValue>({
                           <Filter
                             column={header.column}
                             options={meta.filterOptions}
-                            onFilterChange={onColumnFilterChange}
+                            onFilterChange={stageFilter}
+                            onApply={applyFilters}
                           />
                         ) : (
                           <div className="h-7"></div>

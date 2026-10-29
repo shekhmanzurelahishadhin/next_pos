@@ -25,7 +25,7 @@ class PurchaseController extends Controller
     public function index(Request $request)
     {
         $rows = $this->service->getPurchaseRows(
-            $request->only('status', 'po_no', 'supplier_id', 'supplier_name', 'store_id', 'cash_due', 'purchase_type', 'part_number', 'product_name', 'purchase_date'),
+            $request->only('status', 'po_no', 'supplier_id', 'supplier_name', 'store_id', 'cash_due', 'purchase_type', 'part_number', 'product_name', 'location_name', 'purchase_date'),
             $request->get('per_page')
         );
 

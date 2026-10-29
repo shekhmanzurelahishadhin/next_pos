@@ -141,9 +141,10 @@ export default function PurchaseManage() {
         cell: ({ row }) => row.original.store_name,
       },
       {
-        id: "location",
+        id: "location_name",
+        accessorKey: "location_name",
         header: "Location",
-        meta: { filterVariant: "none", widthClass: "w-[80px]" },
+        meta: { filterVariant: "text", widthClass: "w-[100px]" },
         cell: ({ row }) => row.original.location_name,
       },
       {
@@ -254,7 +255,7 @@ export default function PurchaseManage() {
                 },
                 {
                   icon: FiTrash, variant: "danger", size: "sm", tooltip: "Delete",
-                  show: () => pending && hasPermission("purchase.delete"),
+                  show: () => r.status !== PURCHASE_STATUS.APPROVED && hasPermission("purchase.delete"),
                   onClick: () => act("Delete Purchase?", `Delete ${r.po_no}? This can not be undone.`, () => purchaseService.deletePurchase(r.purchase_id), `${r.po_no} deleted`),
                 },
               ]}

@@ -59,6 +59,10 @@ const ReactSelect: React.FC<ReactSelectProps> = ({
         menuPosition="fixed"
         styles={{
           menuPortal: (base) => ({ ...base, zIndex: 100001 }),
+          // same 36px height as the text inputs
+          control: (base) => ({ ...base, minHeight: 36, height: 36 }),
+          valueContainer: (base) => ({ ...base, height: 34, padding: 0 }),
+          input: (base) => ({ ...base, margin: 0, padding: 0 }),
           option: (base) => ({
             ...base,
             fontSize: "14px",
@@ -86,7 +90,7 @@ const ReactSelect: React.FC<ReactSelectProps> = ({
         classNames={{
           control: ({ isFocused, isDisabled }) =>
             [
-              "flex min-h-9 w-full items-center justify-between rounded-md border px-2.5 py-0.5 text-sm",
+              "flex w-full items-center justify-between rounded-md border px-2.5 text-sm",
               "transition-all duration-200 appearance-none shadow-theme-xs",
               hasError
                 ? "text-error-800 border-error-500 focus:ring-3 focus:ring-error-500/10 dark:text-error-400 dark:border-error-500"

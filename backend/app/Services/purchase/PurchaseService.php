@@ -59,6 +59,7 @@ class PurchaseService
             ->when($filters['cash_due'] ?? null, fn($q, $v) => $q->where('p.cash_due', $v))
             ->when($filters['purchase_type'] ?? null, fn($q, $v) => $q->where('p.purchase_type', $v))
             ->when($filters['part_number'] ?? null, fn($q, $v) => $q->where('pr.part_number', 'like', "%{$v}%"))
+            ->when($filters['location_name'] ?? null, fn($q, $v) => $q->where('l.name', 'like', "%{$v}%"))
             ->when($filters['product_name'] ?? null, fn($q, $v) => $q->where('pr.name', 'like', "%{$v}%"))
             ->when($filters['purchase_date'] ?? null, fn($q, $v) => $q->whereDate('p.purchase_date', $v));
 
@@ -140,15 +141,18 @@ class PurchaseService
         // opening type 2 = credit (we owe them), 1 = debit (they owe us)
         $opening = $supplier?->opening_balance_type == '1' ? -$opening : $opening;
 
-        $purchased = Purchase::where('supplier_id', $supplierId)->where('status', Purchase::APPROVED)->sum('grand_total');
-        $paid = SupplierPayment::where('supplier_id', $supplierId)->sum('amount');
+        // up to today, like parts_bazar getTotalDueUpto()
+        $today = now()->toDateString();
+        $purchased = Purchase::where('supplier_id', $supplierId)->where('status', Purchase::APPROVED)
+            ->whereDate('purchase_date', '<=', $today)->sum('grand_total');
+        $paid = SupplierPayment::where('supplier_id', $supplierId)->whereDate('payment_date', '<=', $today)->sum('amount');
 
         return round($opening + $purchased - $paid, 2);
     }
 
     public function activePurchasePrice(int $productId): float
     {
-        return (float) PurchasePrice::where('product_id', $productId)->orderByDesc('date')->orderByDesc('id')->value('price');
+        return (float) PurchasePrice::where('product_id', $productId)->where('is_active', 1)->orderByDesc('id')->value('price');
     }
 
     public function activeSellPrice(int $productId): float
@@ -204,7 +208,10 @@ class PurchaseService
 
     public function deletePurchase(Purchase $purchase): void
     {
-        $this->mustBePending($purchase);
+        // parts_bazar: only an approved PO is locked, a cancelled one can still be deleted
+        if ($purchase->status == Purchase::APPROVED) {
+            throw new \RuntimeException('Purchase ' . $purchase->po_no . ' is approved and can not be deleted.');
+        }
 
         DB::transaction(function () use ($purchase) {
             $purchase->details()->delete();
@@ -257,7 +264,9 @@ class PurchaseService
                     'created_by'       => Auth::id(),
                 ]);
 
+                PurchasePrice::where('product_id', $item->product_id)->update(['is_active' => 0]);
                 PurchasePrice::create([
+                    'is_active'  => 1,
                     'po_no'      => $purchase->po_no,
                     'product_id' => $item->product_id,
                     'price'      => $unitCost,

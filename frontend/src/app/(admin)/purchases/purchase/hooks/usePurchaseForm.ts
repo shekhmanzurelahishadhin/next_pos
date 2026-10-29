@@ -54,6 +54,8 @@ const emptyEntry = (location_id = ""): EntryRow => ({
   location_id, product: null, part_text: "", qty: "", unit_price: "", per_kg: "", sell_price: "", weight_unit: "",
 });
 
+export const LOCAL = "1"; // local_import lookup code for "Local"
+
 const num = (value: string | number | null | undefined) => {
   const n = parseFloat(String(value ?? ""));
   return isNaN(n) || n < 0 ? 0 : n;
@@ -141,6 +143,12 @@ export const usePurchaseForm = (editId: number | null) => {
   // Due purchase has no payment
   const changeCashDue = (value: string) => {
     setHeader((h) => ({ ...h, cash_due: value, payment_amount: "" }));
+  };
+
+  // Local purchase has no weight cost: parts_bazar clears PER KG and makes it read only
+  const changePurchaseType = (value: string) => {
+    setHeaderField("purchase_type", value);
+    if (value === LOCAL) setEntryField("per_kg", "");
   };
 
   const changePaymentAmount = (value: string) => {
@@ -304,7 +312,7 @@ export const usePurchaseForm = (editId: number | null) => {
   };
 
   return {
-    options, stores, locations, header, entry, items, error, saving, savedId, grandTotal, entryTotals, partNumberRef,
+    options, stores, locations, header, changePurchaseType, entry, items, error, saving, savedId, grandTotal, entryTotals, partNumberRef,
     setHeaderField, setEntryField, changeStore, changeCashDue, changePaymentAmount, selectSupplier, selectProduct,
     canSearchSupplier, canSearchProduct, addItem, removeItem, savePurchase, setSavedId,
   };
