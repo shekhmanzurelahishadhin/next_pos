@@ -659,6 +659,42 @@ class ModuleMenuPermissionSeeder extends Seeder
             );
         }
 
+        // Purchase Return
+        $purchaseReturnMenu = Menu::updateOrCreate(
+            ['name' => 'Purchase Return', 'module_id' => $purchaseModule->id],
+            ['slug' => 'purchase-return']
+        );
+        foreach (['create', 'view', 'delete'] as $action) {
+            Permission::updateOrCreate(
+                ['name' => "purchase-return.{$action}", 'guard_name' => 'web'],
+                [
+                    'module_id'   => $purchaseModule->id,
+                    'menu_id'     => $purchaseReturnMenu->id,
+                    'sub_menu_id' => null,
+                ]
+            );
+        }
+
+        // Inventory module
+        $inventoryModule = Module::updateOrCreate(
+            ['name' => 'Inventory'],
+            ['slug' => 'inventory']
+        );
+        foreach (['Inventory Stock' => 'inventory-stock', 'Inventory Barcode' => 'inventory-barcode'] as $menuName => $slug) {
+            $inventoryMenu = Menu::updateOrCreate(
+                ['name' => $menuName, 'module_id' => $inventoryModule->id],
+                ['slug' => $slug]
+            );
+            Permission::updateOrCreate(
+                ['name' => "{$slug}.view", 'guard_name' => 'web'],
+                [
+                    'module_id'   => $inventoryModule->id,
+                    'menu_id'     => $inventoryMenu->id,
+                    'sub_menu_id' => null,
+                ]
+            );
+        }
+
         $salesModule = Module::updateOrCreate(
             ['name' => 'Sales'],
             ['slug' => 'sales']

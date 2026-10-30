@@ -19,6 +19,8 @@ use App\Http\Controllers\api\softConfig\PpSpSetupController;
 use App\Http\Controllers\api\softConfig\ScrollCodeController;
 use App\Http\Controllers\api\purchase\SupplierController;
 use App\Http\Controllers\api\purchase\PurchaseController;
+use App\Http\Controllers\api\purchase\PurchaseReturnController;
+use App\Http\Controllers\api\inventory\InventoryController;
 use App\Http\Controllers\api\sales\CustomerController;
 use App\Http\Controllers\api\sales\CustomersContactController;
 use App\Http\Controllers\api\sales\SellPriceController;
@@ -205,6 +207,12 @@ Route::prefix('v1')->group(function () {
             });
         });
 
+        // Inventory Route
+        Route::prefix('inventory')->group(function () {
+            Route::get('stock', [InventoryController::class, 'stock']);
+            Route::get('barcodes', [InventoryController::class, 'barcodes']);
+        });
+
         // Purchase Route
         Route::prefix('purchase')->group(function () {
 
@@ -237,6 +245,16 @@ Route::prefix('v1')->group(function () {
                     Route::post('/restore', [PurchasePriceController::class, 'restore']);
                     Route::delete('/force', [PurchasePriceController::class, 'forceDelete']);
                 });
+            });
+
+            // Purchase Return Routes (stock out of an approved PO)
+            Route::prefix('purchase-returns')->group(function () {
+                Route::get('/', [PurchaseReturnController::class, 'index']);
+                Route::post('/', [PurchaseReturnController::class, 'store']);
+                Route::get('/returnable', [PurchaseReturnController::class, 'returnable']);
+                Route::get('/form/{purchase}', [PurchaseReturnController::class, 'form']);
+                Route::get('/{id}', [PurchaseReturnController::class, 'show']);
+                Route::delete('/{purchaseReturn}', [PurchaseReturnController::class, 'destroy']);
             });
 
             // Direct Purchase Routes (create -> approve = stock in)

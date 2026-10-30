@@ -26,7 +26,9 @@ export default function DatePicker({
   useEffect(() => {
     const flatPickr = flatpickr(`#${id}`, {
       mode: mode || "single",
-      static: true,
+      // calendar is added to <body>, so a modal or table never cuts it off
+      static: false,
+      position: "auto",
       monthSelectorType: "static",
       dateFormat: "Y-m-d",
       defaultDate,

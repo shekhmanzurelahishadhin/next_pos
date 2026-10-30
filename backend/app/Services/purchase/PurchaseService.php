@@ -3,7 +3,9 @@
 namespace App\Services\purchase;
 
 use App\Models\inventory\Inventory;
+use App\Models\inventory\InventoryBarcode;
 use App\Models\purchase\Purchase;
+use App\Models\purchase\PurchaseReturn;
 use App\Models\purchase\PurchaseStatusHistory;
 use App\Models\purchase\Supplier;
 use App\Models\purchase\SupplierPayment;
@@ -146,8 +148,12 @@ class PurchaseService
         $purchased = Purchase::where('supplier_id', $supplierId)->where('status', Purchase::APPROVED)
             ->whereDate('purchase_date', '<=', $today)->sum('grand_total');
         $paid = SupplierPayment::where('supplier_id', $supplierId)->whereDate('payment_date', '<=', $today)->sum('amount');
+        // returned goods lower the due, money the supplier refunded brings it back
+        $returns = PurchaseReturn::where('supplier_id', $supplierId)->whereDate('return_date', '<=', $today);
+        $returned = (clone $returns)->sum('total_amount');
+        $refunded = (clone $returns)->where('is_refund', 1)->sum('refund_amount');
 
-        return round($opening + $purchased - $paid, 2);
+        return round($opening + $purchased - $paid - $returned + $refunded, 2);
     }
 
     public function activePurchasePrice(int $productId): float
@@ -248,7 +254,7 @@ class PurchaseService
                 // landed cost of one unit = unit price + weight cost
                 $unitCost = round($item->unit_price + ($item->per_kg ?? 0) * ($item->weight_unit ?? 0), 2);
 
-                Inventory::create([
+                $stockRow = [
                     'company_id'       => $purchase->company_id,
                     'store_id'         => $purchase->store_id,
                     'location_id'      => $item->location_id,
@@ -260,9 +266,11 @@ class PurchaseService
                     'entry_point'      => 'purchase',
                     'entry_no'         => $purchase->po_no,
                     'reference_id'     => $item->id,
-                    'barcode'          => strtoupper(Str::random(10)),
-                    'created_by'       => Auth::id(),
-                ]);
+                    'barcode'          => $this->newBarcode(),
+                ];
+                Inventory::create($stockRow + ['created_by' => Auth::id()]);
+                // one barcode row per received item, like parts_bazar inventory_barcode
+                InventoryBarcode::create($stockRow);
 
                 PurchasePrice::where('product_id', $item->product_id)->update(['is_active' => 0]);
                 PurchasePrice::create([
@@ -311,6 +319,16 @@ class PurchaseService
             ]);
             $this->addHistory($purchase, Purchase::APPROVED);
         });
+    }
+
+    // random 10 character barcode that is not used yet
+    private function newBarcode(): string
+    {
+        do {
+            $barcode = strtoupper(Str::random(10));
+        } while (InventoryBarcode::where('barcode', $barcode)->exists());
+
+        return $barcode;
     }
 
     private function mustBePending(Purchase $purchase): void
