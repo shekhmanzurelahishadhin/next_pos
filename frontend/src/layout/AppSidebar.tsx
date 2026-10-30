@@ -14,6 +14,7 @@ import {
   FiShoppingBag,
   FiSearch,
 } from "../icons/index";
+import { FiBox } from "react-icons/fi";
 import { useAuth } from "@/context/AuthContext";
 
 // Types
@@ -84,6 +85,16 @@ const navItems: NavItem[] = [
       { name: "Suppliers", path: "/purchases/suppliers", requiredPermissions: ["supplier.view", "supplier.create", "supplier.edit", "supplier.delete"] },
       { name: "Purchase", path: "/purchases/purchase", requiredPermissions: ["purchase.create"] },
       { name: "Purchase Manage", path: "/purchases/manage", requiredPermissions: ["purchase.view", "purchase.create", "purchase.edit", "purchase.delete", "purchase.approve"] },
+      { name: "Purchase Return", path: "/purchases/return", requiredPermissions: ["purchase-return.create"] },
+      { name: "Purchase Return Manage", path: "/purchases/return-manage", requiredPermissions: ["purchase-return.view", "purchase-return.create", "purchase-return.delete"] },
+    ],
+  },
+  {
+    name: "Inventory",
+    icon: <FiBox />,
+    subItems: [
+      { name: "Inventory Stock", path: "/inventory/stock", requiredPermissions: ["inventory-stock.view"] },
+      { name: "Inventory Barcode", path: "/inventory/barcode", requiredPermissions: ["inventory-barcode.view"] },
     ],
   },
   {
