@@ -102,6 +102,10 @@ const navItems: NavItem[] = [
     icon: <FiShoppingBag />,
     subItems: [
       { name: "Customers", path: "/sales/customers", requiredPermissions: ["customer.view", "customer.create", "customer.edit", "customer.delete"] },
+      { name: "Sales", path: "/sales/sale", requiredPermissions: ["sale.create"] },
+      { name: "Sales Manage", path: "/sales/manage", requiredPermissions: ["sale.view", "sale.create", "sale.edit", "sale.delete", "sale.approve"] },
+      { name: "Sales Return", path: "/sales/return", requiredPermissions: ["sale-return.create"] },
+      { name: "Sales Return Manage", path: "/sales/return-manage", requiredPermissions: ["sale-return.view", "sale-return.create", "sale-return.delete"] },
       { name: "Customers Contact", path: "/sales/customers-contact", requiredPermissions: ["customer-contact.view", "customer-contact.create", "customer-contact.edit", "customer-contact.delete"] },
     ],
   },

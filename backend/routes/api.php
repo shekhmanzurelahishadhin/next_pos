@@ -25,7 +25,7 @@ use App\Http\Controllers\api\sales\CustomerController;
 use App\Http\Controllers\api\sales\CustomersContactController;
 use App\Http\Controllers\api\sales\SellPriceController;
 use App\Http\Controllers\api\sales\SaleController;
-use App\Http\Controllers\api\sales\SaleDetailController;
+use App\Http\Controllers\api\sales\SaleReturnController;
 use App\Http\Controllers\api\softConfig\ProductController;
 use App\Http\Controllers\api\softConfig\PurchasePriceController;
 use App\Http\Controllers\api\softConfig\ProductPriceController;
@@ -299,6 +299,30 @@ Route::prefix('v1')->group(function () {
                 Route::delete('/{id}', [CustomersContactController::class, 'destroy']); // force delete
             });
 
+            // Sales Routes (create -> approve = stock out)
+            Route::prefix('sales')->group(function () {
+                Route::get('/', [SaleController::class, 'index']);
+                Route::post('/', [SaleController::class, 'store']);
+                Route::get('/form-options', [SaleController::class, 'formOptions']);
+                Route::get('/search-customers', [SaleController::class, 'searchCustomers']);
+                Route::get('/search-barcodes', [SaleController::class, 'searchBarcodes']);
+                Route::delete('/items/{saleDetail}', [SaleController::class, 'destroyItem']);
+                Route::get('/{id}', [SaleController::class, 'show']);
+                Route::put('/{sale}', [SaleController::class, 'update']);
+                Route::delete('/{sale}', [SaleController::class, 'destroy']);
+                Route::post('/{sale}/approve', [SaleController::class, 'approve']);
+            });
+
+            // Sales Return (stock back in, lowers the customer due)
+            Route::prefix('sale-returns')->group(function () {
+                Route::get('/', [SaleReturnController::class, 'index']);
+                Route::post('/', [SaleReturnController::class, 'store']);
+                Route::get('/returnable', [SaleReturnController::class, 'returnable']);
+                Route::get('/form/{sale}', [SaleReturnController::class, 'form']);
+                Route::get('/{id}', [SaleReturnController::class, 'show']);
+                Route::delete('/{saleReturn}', [SaleReturnController::class, 'destroy']);
+            });
+
             // Sell Price
             Route::apiResource('sell-prices', SellPriceController::class);
             Route::prefix('sell-prices')->group(function () {
@@ -308,32 +332,6 @@ Route::prefix('v1')->group(function () {
                 Route::put('{id}/restore', [SellPriceController::class, 'restore']);
             });
         });
-        // Sale Details Routes
-        Route::prefix('sale-details')->group(function () {
-            Route::get('/by-sale/{saleId}', [SaleDetailController::class, 'getBySale']);
-            Route::get('/{id}', [SaleDetailController::class, 'show']);
-            Route::post('/', [SaleDetailController::class, 'store']);
-            Route::put('/{id}', [SaleDetailController::class, 'update']);
-            Route::delete('/{id}', [SaleDetailController::class, 'destroy']);
-        });
-
-        // Alternative nested route
-        Route::prefix('sales/{saleId}/details')->group(function () {
-            Route::get('/', [SaleDetailController::class, 'getBySale']);
-            Route::post('/', [SaleDetailController::class, 'store']);
-        });
-        Route::get('/', [SaleController::class, 'index']);
-        Route::post('/', [SaleController::class, 'store']);
-        Route::get('/{id}', [SaleController::class, 'show']);
-        Route::put('/{id}', [SaleController::class, 'update']);
-        Route::delete('/{id}', [SaleController::class, 'destroy']);
-        Route::patch('/{id}/restore', [SaleController::class, 'restore']);
-
-        Route::post('{id}/approve', [SaleController::class, 'approve']);
-
-        Route::get('/today', [SaleController::class, 'getTodaySales']);
-        Route::get('/by-date-range', [SaleController::class, 'getByDateRange']);
-        Route::get('/by-customer/{customerId}', [SaleController::class, 'getByCustomer']);
     });
 
     Route::get('/test-cors', function () {

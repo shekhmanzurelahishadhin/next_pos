@@ -699,6 +699,38 @@ class ModuleMenuPermissionSeeder extends Seeder
             ['name' => 'Sales'],
             ['slug' => 'sales']
         );
+        // Sales (sell items like parts_bazar)
+        $saleMenu = Menu::updateOrCreate(
+            ['name' => 'Sales', 'module_id' => $salesModule->id],
+            ['slug' => 'sales']
+        );
+        foreach (['create', 'view', 'edit', 'delete', 'approve'] as $action) {
+            Permission::updateOrCreate(
+                ['name' => "sale.{$action}", 'guard_name' => 'web'],
+                [
+                    'module_id'   => $salesModule->id,
+                    'menu_id'     => $saleMenu->id,
+                    'sub_menu_id' => null,
+                ]
+            );
+        }
+
+        // Sales Return
+        $saleReturnMenu = Menu::updateOrCreate(
+            ['name' => 'Sales Return', 'module_id' => $salesModule->id],
+            ['slug' => 'sale-return']
+        );
+        foreach (['create', 'view', 'delete'] as $action) {
+            Permission::updateOrCreate(
+                ['name' => "sale-return.{$action}", 'guard_name' => 'web'],
+                [
+                    'module_id'   => $salesModule->id,
+                    'menu_id'     => $saleReturnMenu->id,
+                    'sub_menu_id' => null,
+                ]
+            );
+        }
+
         $customerMenu = Menu::updateOrCreate(
             ['name' => 'Customers', 'module_id' => $salesModule->id],
             ['slug' => 'customers']

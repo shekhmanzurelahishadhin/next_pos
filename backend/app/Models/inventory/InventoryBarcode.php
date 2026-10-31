@@ -48,4 +48,11 @@ class InventoryBarcode extends Model
         if (!$barcode) return;
         self::where('barcode', $barcode)->increment('stock_out', $qty);
     }
+
+    // Stock coming back into a barcode (sales return); a negative qty takes it out again
+    public static function addStockIn(?string $barcode, float $qty): void
+    {
+        if (!$barcode) return;
+        self::where('barcode', $barcode)->increment('stock_in', $qty);
+    }
 }

@@ -321,11 +321,11 @@ class PurchaseService
         });
     }
 
-    // random 10 character barcode that is not used yet
+    // parts_bazar barcode: 6 random digits + today as ddmmyy, not used yet
     private function newBarcode(): string
     {
         do {
-            $barcode = strtoupper(Str::random(10));
+            $barcode = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT) . date('dmy');
         } while (InventoryBarcode::where('barcode', $barcode)->exists());
 
         return $barcode;
