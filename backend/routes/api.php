@@ -26,6 +26,8 @@ use App\Http\Controllers\api\sales\CustomersContactController;
 use App\Http\Controllers\api\sales\SellPriceController;
 use App\Http\Controllers\api\sales\SaleController;
 use App\Http\Controllers\api\sales\SaleReturnController;
+use App\Http\Controllers\api\sales\MoneyReceiptController;
+use App\Http\Controllers\api\purchase\SupplierPaymentController;
 use App\Http\Controllers\api\softConfig\ProductController;
 use App\Http\Controllers\api\softConfig\PurchasePriceController;
 use App\Http\Controllers\api\softConfig\ProductPriceController;
@@ -257,6 +259,16 @@ Route::prefix('v1')->group(function () {
                 Route::delete('/{purchaseReturn}', [PurchaseReturnController::class, 'destroy']);
             });
 
+            // Supplier Payment (we pay the supplier due)
+            Route::prefix('supplier-payments')->group(function () {
+                Route::get('/', [SupplierPaymentController::class, 'index']);
+                Route::post('/', [SupplierPaymentController::class, 'store']);
+                Route::get('/suppliers', [SupplierPaymentController::class, 'suppliers']);
+                Route::get('/form/{supplier}', [SupplierPaymentController::class, 'form']);
+                Route::get('/{slNo}', [SupplierPaymentController::class, 'show']);
+                Route::delete('/{slNo}', [SupplierPaymentController::class, 'destroy']);
+            });
+
             // Direct Purchase Routes (create -> approve = stock in)
             Route::prefix('purchases')->group(function () {
                 Route::get('/', [PurchaseController::class, 'index']);
@@ -321,6 +333,16 @@ Route::prefix('v1')->group(function () {
                 Route::get('/form/{sale}', [SaleReturnController::class, 'form']);
                 Route::get('/{id}', [SaleReturnController::class, 'show']);
                 Route::delete('/{saleReturn}', [SaleReturnController::class, 'destroy']);
+            });
+
+            // Money Receipt (customer pays the due)
+            Route::prefix('money-receipts')->group(function () {
+                Route::get('/', [MoneyReceiptController::class, 'index']);
+                Route::post('/', [MoneyReceiptController::class, 'store']);
+                Route::get('/customers', [MoneyReceiptController::class, 'customers']);
+                Route::get('/form/{customer}', [MoneyReceiptController::class, 'form']);
+                Route::get('/{mrNo}', [MoneyReceiptController::class, 'show']);
+                Route::delete('/{mrNo}', [MoneyReceiptController::class, 'destroy']);
             });
 
             // Sell Price

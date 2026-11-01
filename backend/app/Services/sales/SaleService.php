@@ -152,7 +152,9 @@ class SaleService
         $today = now()->toDateString();
         $sales = Sale::where('customer_id', $customerId)->where('status', Sale::APPROVED)
             ->whereDate('order_date', '<=', $today)->sum('grand_total');
-        $received = MoneyReceipt::where('customer_id', $customerId)->whereDate('receipt_date', '<=', $today)->sum('amount');
+        $received = MoneyReceipt::where('customer_id', $customerId)->whereDate('receipt_date', '<=', $today)
+            // an Adjustment MR only moves old advance onto invoices, its amount was counted already
+            ->sum(DB::raw("IF(received_type = '5', 0, amount) + discount + vds + tds"));
         $returns = SaleReturn::where('customer_id', $customerId)->whereDate('return_date', '<=', $today);
         $returned = (clone $returns)->sum('total_amount');
         $refunded = $returns->sum('refund_amount');
@@ -271,6 +273,7 @@ class SaleService
                     'order_no'      => $sale->so_no,
                     'receipt_date'  => $date,
                     'received_type' => $sale->received_type,
+                    'lot_amount'    => $sale->received_amount,
                     'amount'        => $sale->received_amount,
                     'bill_amount'   => $sale->grand_total,
                     'created_by'    => Auth::id(),

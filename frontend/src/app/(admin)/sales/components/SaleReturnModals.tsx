@@ -6,6 +6,7 @@ import { Modal } from "@/components/ui/modal";
 import Button from "@/components/ui/button/Button";
 import Label from "@/components/form/Label";
 import DatePicker from "@/components/form/date-picker";
+import { printHtml } from "@/lib/print";
 import { formatDate, formatMoney } from "@/lib/format";
 import { saleReturnService, SaleReturnForm } from "@/services/saleReturnService";
 
@@ -216,12 +217,7 @@ export function SaleReturnChalanModal({ returnId, onClose }: { returnId: number 
   }, [returnId]);
 
   const print = () => {
-    const win = window.open("", "_blank", "width=900,height=700");
-    if (!win || !printArea.current) return;
-    win.document.write(`<html><head><title>${data?.return_no ?? "Return"}</title><style>${PRINT_STYLE}</style></head><body>${printArea.current.innerHTML}</body></html>`);
-    win.document.close();
-    win.focus();
-    win.print();
+    if (printArea.current) printHtml(data?.return_no ?? "Return", printArea.current.innerHTML, PRINT_STYLE);
   };
 
   const r = data;

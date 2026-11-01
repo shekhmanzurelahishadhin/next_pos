@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import Button from "@/components/ui/button/Button";
+import { printHtml } from "@/lib/print";
 import { formatDate, formatMoney } from "@/lib/format";
 import { saleService } from "@/services/saleService";
 
@@ -37,12 +38,7 @@ export function SaleInvoice({ saleId, onClose }: SaleInvoiceProps) {
   }, [saleId]);
 
   const print = () => {
-    const win = window.open("", "_blank", "width=900,height=700");
-    if (!win || !printArea.current) return;
-    win.document.write(`<html><head><title>${sale?.so_no ?? "Invoice"}</title><style>${PRINT_STYLE}</style></head><body>${printArea.current.innerHTML}</body></html>`);
-    win.document.close();
-    win.focus();
-    win.print();
+    if (printArea.current) printHtml(sale?.so_no ?? "Invoice", printArea.current.innerHTML, PRINT_STYLE);
   };
 
   const s = sale;

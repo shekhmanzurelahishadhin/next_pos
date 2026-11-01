@@ -147,7 +147,9 @@ class PurchaseService
         $today = now()->toDateString();
         $purchased = Purchase::where('supplier_id', $supplierId)->where('status', Purchase::APPROVED)
             ->whereDate('purchase_date', '<=', $today)->sum('grand_total');
-        $paid = SupplierPayment::where('supplier_id', $supplierId)->whereDate('payment_date', '<=', $today)->sum('amount');
+        $paid = SupplierPayment::where('supplier_id', $supplierId)->whereDate('payment_date', '<=', $today)
+            // an Adjustment payment only moves old advance onto POs, its amount was counted already
+            ->sum(DB::raw("IF(payment_type = '5', 0, amount) + discount"));
         // returned goods lower the due, money the supplier refunded brings it back
         $returns = PurchaseReturn::where('supplier_id', $supplierId)->whereDate('return_date', '<=', $today);
         $returned = (clone $returns)->sum('total_amount');
@@ -307,6 +309,7 @@ class PurchaseService
                     'po_no'        => $purchase->po_no,
                     'payment_date' => $date,
                     'payment_type' => $purchase->payment_type,
+                    'lot_amount'   => $purchase->payment_amount,
                     'amount'       => $purchase->payment_amount,
                     'bill_amount'  => $purchase->grand_total,
                 ]);

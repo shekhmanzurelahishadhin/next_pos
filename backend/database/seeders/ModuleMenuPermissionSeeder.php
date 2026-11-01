@@ -675,6 +675,22 @@ class ModuleMenuPermissionSeeder extends Seeder
             );
         }
 
+        // Supplier Payment
+        $supplierPaymentMenu = Menu::updateOrCreate(
+            ['name' => 'Supplier Payment', 'module_id' => $purchaseModule->id],
+            ['slug' => 'supplier-payment']
+        );
+        foreach (['create', 'view', 'delete'] as $action) {
+            Permission::updateOrCreate(
+                ['name' => "supplier-payment.{$action}", 'guard_name' => 'web'],
+                [
+                    'module_id'   => $purchaseModule->id,
+                    'menu_id'     => $supplierPaymentMenu->id,
+                    'sub_menu_id' => null,
+                ]
+            );
+        }
+
         // Inventory module
         $inventoryModule = Module::updateOrCreate(
             ['name' => 'Inventory'],
@@ -726,6 +742,22 @@ class ModuleMenuPermissionSeeder extends Seeder
                 [
                     'module_id'   => $salesModule->id,
                     'menu_id'     => $saleReturnMenu->id,
+                    'sub_menu_id' => null,
+                ]
+            );
+        }
+
+        // Money Receipt
+        $moneyReceiptMenu = Menu::updateOrCreate(
+            ['name' => 'Money Receipt', 'module_id' => $salesModule->id],
+            ['slug' => 'money-receipt']
+        );
+        foreach (['create', 'view', 'delete'] as $action) {
+            Permission::updateOrCreate(
+                ['name' => "money-receipt.{$action}", 'guard_name' => 'web'],
+                [
+                    'module_id'   => $salesModule->id,
+                    'menu_id'     => $moneyReceiptMenu->id,
                     'sub_menu_id' => null,
                 ]
             );

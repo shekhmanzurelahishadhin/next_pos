@@ -87,6 +87,8 @@ const navItems: NavItem[] = [
       { name: "Purchase Manage", path: "/purchases/manage", requiredPermissions: ["purchase.view", "purchase.create", "purchase.edit", "purchase.delete", "purchase.approve"] },
       { name: "Purchase Return", path: "/purchases/return", requiredPermissions: ["purchase-return.create"] },
       { name: "Purchase Return Manage", path: "/purchases/return-manage", requiredPermissions: ["purchase-return.view", "purchase-return.create", "purchase-return.delete"] },
+      { name: "Supplier Payment", path: "/purchases/supplier-payment", requiredPermissions: ["supplier-payment.create"] },
+      { name: "Supplier Payment Manage", path: "/purchases/supplier-payment-manage", requiredPermissions: ["supplier-payment.view", "supplier-payment.create", "supplier-payment.delete"] },
     ],
   },
   {
@@ -106,6 +108,8 @@ const navItems: NavItem[] = [
       { name: "Sales Manage", path: "/sales/manage", requiredPermissions: ["sale.view", "sale.create", "sale.edit", "sale.delete", "sale.approve"] },
       { name: "Sales Return", path: "/sales/return", requiredPermissions: ["sale-return.create"] },
       { name: "Sales Return Manage", path: "/sales/return-manage", requiredPermissions: ["sale-return.view", "sale-return.create", "sale-return.delete"] },
+      { name: "Money Receipt", path: "/sales/money-receipt", requiredPermissions: ["money-receipt.create"] },
+      { name: "Money Receipt Manage", path: "/sales/money-receipt-manage", requiredPermissions: ["money-receipt.view", "money-receipt.create", "money-receipt.delete"] },
       { name: "Customers Contact", path: "/sales/customers-contact", requiredPermissions: ["customer-contact.view", "customer-contact.create", "customer-contact.edit", "customer-contact.delete"] },
     ],
   },
