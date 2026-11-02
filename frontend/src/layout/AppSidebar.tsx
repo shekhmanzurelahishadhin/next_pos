@@ -97,6 +97,8 @@ const navItems: NavItem[] = [
     subItems: [
       { name: "Inventory Stock", path: "/inventory/stock", requiredPermissions: ["inventory-stock.view"] },
       { name: "Inventory Barcode", path: "/inventory/barcode", requiredPermissions: ["inventory-barcode.view"] },
+      { name: "Short List Order", path: "/inventory/short-list-order", requiredPermissions: ["short-list-order.create"] },
+      { name: "Short List Order Manage", path: "/inventory/short-list-order-manage", requiredPermissions: ["short-list-order.view", "short-list-order.create", "short-list-order.delete"] },
     ],
   },
   {

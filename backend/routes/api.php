@@ -21,6 +21,7 @@ use App\Http\Controllers\api\purchase\SupplierController;
 use App\Http\Controllers\api\purchase\PurchaseController;
 use App\Http\Controllers\api\purchase\PurchaseReturnController;
 use App\Http\Controllers\api\inventory\InventoryController;
+use App\Http\Controllers\api\inventory\ShortListOrderController;
 use App\Http\Controllers\api\sales\CustomerController;
 use App\Http\Controllers\api\sales\CustomersContactController;
 use App\Http\Controllers\api\sales\SellPriceController;
@@ -213,6 +214,15 @@ Route::prefix('v1')->group(function () {
         Route::prefix('inventory')->group(function () {
             Route::get('stock', [InventoryController::class, 'stock']);
             Route::get('barcodes', [InventoryController::class, 'barcodes']);
+
+            // Short List Order (products we plan to buy)
+            Route::prefix('short-list-orders')->group(function () {
+                Route::get('/', [ShortListOrderController::class, 'index']);
+                Route::post('/', [ShortListOrderController::class, 'store']);
+                Route::get('/search-products', [ShortListOrderController::class, 'searchProducts']);
+                Route::get('/{maxSlNo}', [ShortListOrderController::class, 'show']);
+                Route::delete('/{maxSlNo}', [ShortListOrderController::class, 'destroy']);
+            });
         });
 
         // Purchase Route

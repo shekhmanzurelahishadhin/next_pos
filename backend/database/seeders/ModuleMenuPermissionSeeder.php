@@ -710,6 +710,21 @@ class ModuleMenuPermissionSeeder extends Seeder
                 ]
             );
         }
+        // Short List Order
+        $shortListMenu = Menu::updateOrCreate(
+            ['name' => 'Short List Order', 'module_id' => $inventoryModule->id],
+            ['slug' => 'short-list-order']
+        );
+        foreach (['create', 'view', 'delete'] as $action) {
+            Permission::updateOrCreate(
+                ['name' => "short-list-order.{$action}", 'guard_name' => 'web'],
+                [
+                    'module_id'   => $inventoryModule->id,
+                    'menu_id'     => $shortListMenu->id,
+                    'sub_menu_id' => null,
+                ]
+            );
+        }
 
         $salesModule = Module::updateOrCreate(
             ['name' => 'Sales'],
