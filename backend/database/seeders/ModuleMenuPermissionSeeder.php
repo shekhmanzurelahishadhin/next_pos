@@ -725,6 +725,21 @@ class ModuleMenuPermissionSeeder extends Seeder
                 ]
             );
         }
+        // Stock Transfer
+        $stockTransferMenu = Menu::updateOrCreate(
+            ['name' => 'Stock Transfer', 'module_id' => $inventoryModule->id],
+            ['slug' => 'stock-transfer']
+        );
+        foreach (['create', 'view', 'edit', 'delete', 'approve'] as $action) {
+            Permission::updateOrCreate(
+                ['name' => "stock-transfer.{$action}", 'guard_name' => 'web'],
+                [
+                    'module_id'   => $inventoryModule->id,
+                    'menu_id'     => $stockTransferMenu->id,
+                    'sub_menu_id' => null,
+                ]
+            );
+        }
 
         $salesModule = Module::updateOrCreate(
             ['name' => 'Sales'],

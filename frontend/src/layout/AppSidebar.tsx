@@ -99,6 +99,8 @@ const navItems: NavItem[] = [
       { name: "Inventory Barcode", path: "/inventory/barcode", requiredPermissions: ["inventory-barcode.view"] },
       { name: "Short List Order", path: "/inventory/short-list-order", requiredPermissions: ["short-list-order.create"] },
       { name: "Short List Order Manage", path: "/inventory/short-list-order-manage", requiredPermissions: ["short-list-order.view", "short-list-order.create", "short-list-order.delete"] },
+      { name: "Stock Transfer Entry", path: "/inventory/stock-transfer", requiredPermissions: ["stock-transfer.create"] },
+      { name: "Stock Transfer Manage", path: "/inventory/stock-transfer-manage", requiredPermissions: ["stock-transfer.view", "stock-transfer.create", "stock-transfer.edit", "stock-transfer.delete", "stock-transfer.approve"] },
     ],
   },
   {

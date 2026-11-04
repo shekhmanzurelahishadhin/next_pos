@@ -268,7 +268,7 @@ class PurchaseService
                     'entry_point'      => 'purchase',
                     'entry_no'         => $purchase->po_no,
                     'reference_id'     => $item->id,
-                    'barcode'          => $this->newBarcode(),
+                    'barcode'          => InventoryBarcode::newBarcode(),
                 ];
                 Inventory::create($stockRow + ['created_by' => Auth::id()]);
                 // one barcode row per received item, like parts_bazar inventory_barcode
@@ -322,16 +322,6 @@ class PurchaseService
             ]);
             $this->addHistory($purchase, Purchase::APPROVED);
         });
-    }
-
-    // parts_bazar barcode: 6 random digits + today as ddmmyy, not used yet
-    private function newBarcode(): string
-    {
-        do {
-            $barcode = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT) . date('dmy');
-        } while (InventoryBarcode::where('barcode', $barcode)->exists());
-
-        return $barcode;
     }
 
     private function mustBePending(Purchase $purchase): void

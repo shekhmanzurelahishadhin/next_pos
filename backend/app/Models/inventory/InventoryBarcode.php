@@ -35,6 +35,16 @@ class InventoryBarcode extends Model
         return $this->belongsTo(Location::class);
     }
 
+    // parts_bazar barcode: 6 random digits + today as ddmmyy, not used yet
+    public static function newBarcode(): string
+    {
+        do {
+            $barcode = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT) . date('dmy');
+        } while (self::where('barcode', $barcode)->exists());
+
+        return $barcode;
+    }
+
     // Qty of this barcode still in stock
     public static function closingStock(?string $barcode): float
     {

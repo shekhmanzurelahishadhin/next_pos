@@ -22,6 +22,7 @@ use App\Http\Controllers\api\purchase\PurchaseController;
 use App\Http\Controllers\api\purchase\PurchaseReturnController;
 use App\Http\Controllers\api\inventory\InventoryController;
 use App\Http\Controllers\api\inventory\ShortListOrderController;
+use App\Http\Controllers\api\inventory\StockTransferController;
 use App\Http\Controllers\api\sales\CustomerController;
 use App\Http\Controllers\api\sales\CustomersContactController;
 use App\Http\Controllers\api\sales\SellPriceController;
@@ -222,6 +223,17 @@ Route::prefix('v1')->group(function () {
                 Route::get('/search-products', [ShortListOrderController::class, 'searchProducts']);
                 Route::get('/{maxSlNo}', [ShortListOrderController::class, 'show']);
                 Route::delete('/{maxSlNo}', [ShortListOrderController::class, 'destroy']);
+            });
+
+            // Stock Transfer (pending -> approve = barcode moves to the new store / location)
+            Route::prefix('stock-transfers')->group(function () {
+                Route::get('/', [StockTransferController::class, 'index']);
+                Route::post('/', [StockTransferController::class, 'store']);
+                Route::get('/search-barcodes', [StockTransferController::class, 'searchBarcodes']);
+                Route::get('/{id}', [StockTransferController::class, 'show']);
+                Route::put('/{stockTransfer}', [StockTransferController::class, 'update']);
+                Route::delete('/{stockTransfer}', [StockTransferController::class, 'destroy']);
+                Route::post('/{stockTransfer}/approve', [StockTransferController::class, 'approve']);
             });
         });
 
