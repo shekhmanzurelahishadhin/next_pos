@@ -20,7 +20,7 @@ export default function AdminLayout({
   const mainContentMargin = isMobileOpen
     ? "ml-0"
     : isExpanded || isHovered
-    ? "lg:ml-[232px]"
+    ? "lg:ml-[240px]"
     : "lg:ml-[68px]";
  const { isAuthenticated, loading } = useAuth();
   const router = useRouter();
