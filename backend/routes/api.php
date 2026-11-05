@@ -264,6 +264,7 @@ Route::prefix('v1')->group(function () {
             Route::get('search-products', [InventoryReportController::class, 'searchProducts']);
             Route::prefix('inventory')->group(function () {
                 Route::get('stock-qty', [InventoryReportController::class, 'stockQty']);
+                Route::get('stock-amount', [InventoryReportController::class, 'stockAmount']);
             });
         });
 

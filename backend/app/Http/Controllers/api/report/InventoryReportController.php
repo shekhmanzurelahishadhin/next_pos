@@ -12,11 +12,23 @@ class InventoryReportController extends Controller
     public function __construct(private InventoryReportService $service)
     {
         $this->middleware('permission:stock-qty-report.view')->only('stockQty');
+        $this->middleware('permission:stock-amount-report.view')->only('stockAmount');
     }
 
     public function stockQty(Request $request)
     {
-        $filters = $request->validate([
+        return ApiResponse::success($this->service->stockQty($this->stockFilters($request)), 'Stock qty report retrieve successfully');
+    }
+
+    // same rows as the Stock QTY Report; the page shows price x qty beside each qty
+    public function stockAmount(Request $request)
+    {
+        return ApiResponse::success($this->service->stockQty($this->stockFilters($request)), 'Stock amount report retrieve successfully');
+    }
+
+    private function stockFilters(Request $request): array
+    {
+        return $request->validate([
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
             'company_id' => 'nullable|integer',
@@ -28,8 +40,6 @@ class InventoryReportController extends Controller
             'barcode' => 'nullable|string|max:255',
             'show' => 'nullable|in:current,all',
         ]);
-
-        return ApiResponse::success($this->service->stockQty($filters), 'Stock qty report retrieve successfully');
     }
 
     public function searchProducts(Request $request)

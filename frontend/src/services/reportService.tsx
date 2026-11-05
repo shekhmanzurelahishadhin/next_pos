@@ -41,8 +41,9 @@ class ReportService {
     return res.data.data;
   }
 
-  async stockQty(filters: Record<string, string>): Promise<StockQtyReport> {
-    const res = await api.get("/reports/inventory/stock-qty", { params: filters });
+  // Stock QTY Report and Inventory Stock Amount Report share one query
+  async stockReport(kind: "qty" | "amount", filters: Record<string, string>): Promise<StockQtyReport> {
+    const res = await api.get(`/reports/inventory/stock-${kind}`, { params: filters });
     return res.data.data;
   }
 }
