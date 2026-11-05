@@ -740,6 +740,23 @@ class ModuleMenuPermissionSeeder extends Seeder
                 ]
             );
         }
+        // Audit Name Setup and Inventory Audit
+        foreach (['Audit Name Setup' => 'audit-name', 'Inventory Audit' => 'inventory-audit'] as $menuName => $slug) {
+            $auditMenu = Menu::updateOrCreate(
+                ['name' => $menuName, 'module_id' => $inventoryModule->id],
+                ['slug' => $slug]
+            );
+            foreach (['create', 'view', 'edit', 'delete'] as $action) {
+                Permission::updateOrCreate(
+                    ['name' => "{$slug}.{$action}", 'guard_name' => 'web'],
+                    [
+                        'module_id'   => $inventoryModule->id,
+                        'menu_id'     => $auditMenu->id,
+                        'sub_menu_id' => null,
+                    ]
+                );
+            }
+        }
 
         $salesModule = Module::updateOrCreate(
             ['name' => 'Sales'],

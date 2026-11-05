@@ -23,6 +23,7 @@ use App\Http\Controllers\api\purchase\PurchaseReturnController;
 use App\Http\Controllers\api\inventory\InventoryController;
 use App\Http\Controllers\api\inventory\ShortListOrderController;
 use App\Http\Controllers\api\inventory\StockTransferController;
+use App\Http\Controllers\api\inventory\InventoryAuditController;
 use App\Http\Controllers\api\sales\CustomerController;
 use App\Http\Controllers\api\sales\CustomersContactController;
 use App\Http\Controllers\api\sales\SellPriceController;
@@ -234,6 +235,26 @@ Route::prefix('v1')->group(function () {
                 Route::put('/{stockTransfer}', [StockTransferController::class, 'update']);
                 Route::delete('/{stockTransfer}', [StockTransferController::class, 'destroy']);
                 Route::post('/{stockTransfer}/approve', [StockTransferController::class, 'approve']);
+            });
+
+            // Audit Name Setup
+            Route::prefix('audit-names')->group(function () {
+                Route::get('/', [InventoryAuditController::class, 'auditNames']);
+                Route::post('/', [InventoryAuditController::class, 'storeAuditName']);
+                Route::put('/{auditName}', [InventoryAuditController::class, 'updateAuditName']);
+                Route::delete('/{auditName}', [InventoryAuditController::class, 'destroyAuditName']);
+            });
+
+            // Inventory Audit (count a location and compare with the ERP stock)
+            Route::prefix('inventory-audits')->group(function () {
+                Route::get('/', [InventoryAuditController::class, 'index']);
+                Route::post('/', [InventoryAuditController::class, 'store']);
+                Route::get('/audit-names', [InventoryAuditController::class, 'activeAuditNames']);
+                Route::get('/scan', [InventoryAuditController::class, 'scan']);
+                Route::get('/location-stock', [InventoryAuditController::class, 'locationStock']);
+                Route::get('/{id}', [InventoryAuditController::class, 'show']);
+                Route::put('/{inventoryAudit}', [InventoryAuditController::class, 'update']);
+                Route::delete('/{inventoryAudit}', [InventoryAuditController::class, 'destroy']);
             });
         });
 

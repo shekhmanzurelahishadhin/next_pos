@@ -98,6 +98,9 @@ const navItems: NavItem[] = [
       { group: "Short List", name: "Short List Order Manage", path: "/inventory/short-list-order-manage", requiredPermissions: ["short-list-order.view", "short-list-order.create", "short-list-order.delete"] },
       { group: "Transfer", name: "Stock Transfer Entry", path: "/inventory/stock-transfer", requiredPermissions: ["stock-transfer.create"] },
       { group: "Transfer", name: "Stock Transfer Manage", path: "/inventory/stock-transfer-manage", requiredPermissions: ["stock-transfer.view", "stock-transfer.create", "stock-transfer.edit", "stock-transfer.delete", "stock-transfer.approve"] },
+      { group: "Audit", name: "Audit Name Setup", path: "/inventory/audit-names", requiredPermissions: ["audit-name.view", "audit-name.create", "audit-name.edit", "audit-name.delete"] },
+      { group: "Audit", name: "Inventory Audit Entry", path: "/inventory/audit", requiredPermissions: ["inventory-audit.create"] },
+      { group: "Audit", name: "Inventory Audit Manage", path: "/inventory/audit-manage", requiredPermissions: ["inventory-audit.view", "inventory-audit.create", "inventory-audit.edit", "inventory-audit.delete"] },
     ],
   },
   {
