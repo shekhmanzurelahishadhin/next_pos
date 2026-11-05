@@ -26,7 +26,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const monthStart = () => today().slice(0, 8) + "01";
 const emptyForm = () => ({
   start_date: monthStart(), end_date: today(), company_id: "", store_id: "", location_id: "",
-  category_id: "", brand_id: "", product_id: "", barcode: "", show: "current",
+  category_id: "", sub_category_id: "", product_id: "", barcode: "", show: "current",
 });
 
 const qty = (n: number) => Number(n.toFixed(2)).toLocaleString("en-US");
@@ -48,7 +48,7 @@ export default function StockReport({ kind }: { kind: keyof typeof KINDS }) {
   const [stores, setStores] = useState<Option[]>([]);
   const [locations, setLocations] = useState<Option[]>([]);
   const [categories, setCategories] = useState<Option[]>([]);
-  const [brands, setBrands] = useState<Option[]>([]);
+  const [subCategories, setSubCategories] = useState<Option[]>([]);
   const [report, setReport] = useState<StockQtyReport | null>(null);
   const [searched, setSearched] = useState<ReturnType<typeof emptyForm> | null>(null);
   const [loading, setLoading] = useState(false);
@@ -70,7 +70,17 @@ export default function StockReport({ kind }: { kind: keyof typeof KINDS }) {
       .catch(() => {});
     load("/configure/stores", setStores);
     load("/configure/categories", setCategories);
-    load("/configure/brands", setBrands);
+    // parts_bazar "Product Type" = sub category; same name is under many categories, so show "Engine (G)"
+    Promise.all([
+      api.get("/configure/categories", { params: { status: 1 } }),
+      api.get("/configure/sub-categories", { params: { status: 1 } }),
+    ]).then(([cats, subs]) => {
+      const catNames = new Map<number, string>(cats.data.data.data.map((c: Named) => [c.id, c.name]));
+      setSubCategories(subs.data.data.data.map((s: Named & { category_id: number }) => ({
+        value: String(s.id),
+        label: `${s.name} (${catNames.get(s.category_id) ?? "-"})`,
+      })));
+    }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -177,8 +187,8 @@ export default function StockReport({ kind }: { kind: keyof typeof KINDS }) {
           <ReportField label="Quality">
             <ReactSelect options={categories} value={form.category_id || null} placeholder="All" onChange={(v) => set("category_id", v ? String(v) : "")} />
           </ReportField>
-          <ReportField label="Brand">
-            <ReactSelect options={brands} value={form.brand_id || null} placeholder="All" onChange={(v) => set("brand_id", v ? String(v) : "")} />
+          <ReportField label="Product Type">
+            <ReactSelect options={subCategories} value={form.sub_category_id || null} placeholder="All" onChange={(v) => set("sub_category_id", v ? String(v) : "")} />
           </ReportField>
           <ReportField label="Product (name / part number)" className="sm:col-span-2">
             <Autocomplete<ReportProduct>

@@ -13,6 +13,8 @@ class InventoryReportController extends Controller
     {
         $this->middleware('permission:stock-qty-report.view')->only('stockQty');
         $this->middleware('permission:stock-amount-report.view')->only('stockAmount');
+        $this->middleware('permission:alert-qty-report.view')->only('alertQty');
+        $this->middleware('permission:out-of-stock-report.view')->only('outOfStock');
     }
 
     public function stockQty(Request $request)
@@ -35,11 +37,38 @@ class InventoryReportController extends Controller
             'store_id' => 'nullable|integer',
             'location_id' => 'nullable|integer',
             'category_id' => 'nullable|integer',
-            'brand_id' => 'nullable|integer',
+            'sub_category_id' => 'nullable|integer',
             'product_id' => 'nullable|integer',
             'barcode' => 'nullable|string|max:255',
             'show' => 'nullable|in:current,all',
         ]);
+    }
+
+    public function alertQty(Request $request)
+    {
+        $filters = $request->validate($this->productFilterRules());
+        return ApiResponse::success([
+            'rows' => $this->service->alertQty($filters),
+            'company' => $this->service->company(),
+        ], 'Alert qty report retrieve successfully');
+    }
+
+    public function outOfStock(Request $request)
+    {
+        $filters = $request->validate(['company_id' => 'nullable|integer', ...$this->productFilterRules()]);
+        return ApiResponse::success([
+            'rows' => $this->service->outOfStock($filters),
+            'company' => $this->service->company($filters['company_id'] ?? null),
+        ], 'Out of stock report retrieve successfully');
+    }
+
+    private function productFilterRules(): array
+    {
+        return [
+            'sub_category_id' => 'nullable|integer',
+            'brand_id' => 'nullable|integer',
+            'product_id' => 'nullable|integer',
+        ];
     }
 
     public function searchProducts(Request $request)

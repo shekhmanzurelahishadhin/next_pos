@@ -27,7 +27,7 @@ const PRINT_STYLE = `
   .rpt-total td { font-weight: bold; background: #f3f3f3; }
 `;
 
-export const rptTh = "rpt-th sticky top-0 z-10 border border-gray-200 bg-gray-100 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300";
+export const rptTh = "rpt-th sticky -top-px z-10 border border-gray-200 bg-gray-100 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300";
 export const rptTd = "border border-gray-200 px-2 py-1.5 dark:border-gray-700";
 export const rptTotal = "rpt-total bg-gray-50 font-semibold text-gray-800 dark:bg-white/[0.04] dark:text-white/90";
 
@@ -114,7 +114,7 @@ export default function ReportView({ title, lines, company, fileName, rowCount, 
             <div key={line} className="rpt-sub text-xs text-gray-600 dark:text-gray-400">{line}</div>
           ))}
         </div>
-        <div className="max-h-[65vh] overflow-auto">{children}</div>
+        <div className="custom-scrollbar max-h-[65vh] overflow-auto">{children}</div>
       </div>
     </div>
   );

@@ -758,7 +758,13 @@ class ModuleMenuPermissionSeeder extends Seeder
             }
         }
         // Inventory reports (view only)
-        foreach (['Stock Qty Report' => 'stock-qty-report', 'Stock Amount Report' => 'stock-amount-report'] as $menuName => $slug) {
+        $reports = [
+            'Stock Qty Report' => 'stock-qty-report',
+            'Stock Amount Report' => 'stock-amount-report',
+            'Alert Quantity Report' => 'alert-qty-report',
+            'Out Of Stock Report' => 'out-of-stock-report',
+        ];
+        foreach ($reports as $menuName => $slug) {
             $reportMenu = Menu::updateOrCreate(
                 ['name' => $menuName, 'module_id' => $inventoryModule->id],
                 ['slug' => $slug]

@@ -43,7 +43,8 @@ class InventoryReportService
             ->when($filters['store_id'] ?? null, fn($q, $v) => $q->where('i.store_id', $v))
             ->when($filters['location_id'] ?? null, fn($q, $v) => $q->where('i.location_id', $v))
             ->when($filters['category_id'] ?? null, fn($q, $v) => $q->where('p.product_category_id', $v))
-            ->when($filters['brand_id'] ?? null, fn($q, $v) => $q->where('p.brand_id', $v))
+            // parts_bazar "Product Type" (prod_brands) = sub category here
+            ->when($filters['sub_category_id'] ?? null, fn($q, $v) => $q->where('p.sub_category_id', $v))
             ->when($filters['product_id'] ?? null, fn($q, $v) => $q->where('i.product_id', $v))
             ->when($filters['barcode'] ?? null, fn($q, $v) => $q->where('i.barcode', $v));
 
@@ -72,6 +73,73 @@ class InventoryReportService
         ];
     }
 
+    // Alert Quantity Report (parts_bazar inventory/alertQtyReport): products with stock entries
+    // whose all-time closing stock is at or under the product alert qty
+    public function alertQty(array $filters)
+    {
+        return $this->productStockQuery($filters)
+            ->joinSub($this->stockSums(), 'st', 'st.product_id', '=', 'p.id')
+            ->whereRaw('COALESCE(p.alert_qty, 0) >= st.closing_stock')
+            ->addSelect('st.closing_stock', 'p.alert_qty')
+            ->orderBy('p.id')
+            ->get()
+            ->map(function ($row) {
+                $row->closing_stock = (float) $row->closing_stock;
+                $row->alert_qty = (float) $row->alert_qty;
+                return $row;
+            });
+    }
+
+    // Out Of Stock Report (parts_bazar inventory/outOfStockReport): every product with no stock left,
+    // never bought products too
+    public function outOfStock(array $filters)
+    {
+        return $this->productStockQuery($filters)
+            ->leftJoinSub($this->stockSums(), 'st', 'st.product_id', '=', 'p.id')
+            ->whereRaw('COALESCE(st.closing_stock, 0) <= 0')
+            ->when($filters['company_id'] ?? null, fn($q, $v) => $q->where(fn($w) => $w->where('p.company_id', $v)->orWhereNull('p.company_id')))
+            ->orderBy('p.id')
+            ->get();
+    }
+
+    private function productStockQuery(array $filters)
+    {
+        $query = DB::table('products as p')
+            ->leftJoin('sub_categories as sc', 'sc.id', '=', 'p.sub_category_id')
+            ->leftJoin('brands as br', 'br.id', '=', 'p.brand_id')
+            ->whereNull('p.deleted_at')
+            ->select('p.id', 'p.name as product_name', 'p.part_number', 'sc.name as sub_category_name', 'br.name as brand_name');
+
+        if ($companyId = $this->ownCompanyId()) {
+            $query->where(fn($q) => $q->where('p.company_id', $companyId)->orWhereNull('p.company_id'));
+        }
+
+        return $query
+            ->when($filters['sub_category_id'] ?? null, fn($q, $v) => $q->where('p.sub_category_id', $v))
+            ->when($filters['brand_id'] ?? null, fn($q, $v) => $q->where('p.brand_id', $v))
+            ->when($filters['product_id'] ?? null, fn($q, $v) => $q->where('p.id', $v));
+    }
+
+    // all-time closing stock per product
+    private function stockSums()
+    {
+        $query = DB::table('inventories')
+            ->selectRaw('product_id, SUM(stock_in - stock_out) AS closing_stock')
+            ->groupBy('product_id');
+
+        if ($companyId = $this->ownCompanyId()) {
+            $query->where('company_id', $companyId);
+        }
+
+        return $query;
+    }
+
+    private function ownCompanyId()
+    {
+        $user = Auth::user();
+        return $user && !$user->hasRole('Super Admin') && !empty($user->company_id) ? $user->company_id : null;
+    }
+
     // product picker of the report search form: name or part number
     public function searchProducts(string $term)
     {
@@ -88,7 +156,7 @@ class InventoryReportService
     }
 
     // the report header: the picked company, else the user's own company
-    private function company($companyId)
+    public function company($companyId = null)
     {
         $companyId = $companyId ?: Auth::user()?->company_id;
         return $companyId ? DB::table('companies')->where('id', $companyId)->select('name', 'address', 'phone', 'logo')->first() : null;

@@ -29,6 +29,21 @@ export interface StockQtyReport {
   location: string | null;
 }
 
+export interface ProductStockRow {
+  id: number;
+  product_name: string;
+  part_number: string;
+  sub_category_name: string | null;
+  brand_name: string | null;
+  closing_stock?: number;
+  alert_qty?: number;
+}
+
+export interface ProductStockReport {
+  rows: ProductStockRow[];
+  company: ReportCompany | null;
+}
+
 export interface ReportProduct {
   id: number;
   name: string;
@@ -44,6 +59,12 @@ class ReportService {
   // Stock QTY Report and Inventory Stock Amount Report share one query
   async stockReport(kind: "qty" | "amount", filters: Record<string, string>): Promise<StockQtyReport> {
     const res = await api.get(`/reports/inventory/stock-${kind}`, { params: filters });
+    return res.data.data;
+  }
+
+  // Alert Quantity Report and Out Of Stock Report
+  async productStockReport(kind: "alert-qty" | "out-of-stock", filters: Record<string, string>): Promise<ProductStockReport> {
+    const res = await api.get(`/reports/inventory/${kind}`, { params: filters });
     return res.data.data;
   }
 }
