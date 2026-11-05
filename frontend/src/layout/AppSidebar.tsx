@@ -101,6 +101,7 @@ const navItems: NavItem[] = [
       { group: "Audit", name: "Audit Name Setup", path: "/inventory/audit-names", requiredPermissions: ["audit-name.view", "audit-name.create", "audit-name.edit", "audit-name.delete"] },
       { group: "Audit", name: "Inventory Audit Entry", path: "/inventory/audit", requiredPermissions: ["inventory-audit.create"] },
       { group: "Audit", name: "Inventory Audit Manage", path: "/inventory/audit-manage", requiredPermissions: ["inventory-audit.view", "inventory-audit.create", "inventory-audit.edit", "inventory-audit.delete"] },
+      { group: "Report", name: "Stock QTY Report", path: "/inventory/report/stock-qty", requiredPermissions: ["stock-qty-report.view"] },
     ],
   },
   {

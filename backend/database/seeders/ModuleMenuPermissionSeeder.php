@@ -757,6 +757,21 @@ class ModuleMenuPermissionSeeder extends Seeder
                 );
             }
         }
+        // Inventory reports (view only)
+        foreach (['Stock Qty Report' => 'stock-qty-report'] as $menuName => $slug) {
+            $reportMenu = Menu::updateOrCreate(
+                ['name' => $menuName, 'module_id' => $inventoryModule->id],
+                ['slug' => $slug]
+            );
+            Permission::updateOrCreate(
+                ['name' => "{$slug}.view", 'guard_name' => 'web'],
+                [
+                    'module_id'   => $inventoryModule->id,
+                    'menu_id'     => $reportMenu->id,
+                    'sub_menu_id' => null,
+                ]
+            );
+        }
 
         $salesModule = Module::updateOrCreate(
             ['name' => 'Sales'],

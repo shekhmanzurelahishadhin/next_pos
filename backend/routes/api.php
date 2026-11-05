@@ -24,6 +24,7 @@ use App\Http\Controllers\api\inventory\InventoryController;
 use App\Http\Controllers\api\inventory\ShortListOrderController;
 use App\Http\Controllers\api\inventory\StockTransferController;
 use App\Http\Controllers\api\inventory\InventoryAuditController;
+use App\Http\Controllers\api\report\InventoryReportController;
 use App\Http\Controllers\api\sales\CustomerController;
 use App\Http\Controllers\api\sales\CustomersContactController;
 use App\Http\Controllers\api\sales\SellPriceController;
@@ -255,6 +256,14 @@ Route::prefix('v1')->group(function () {
                 Route::get('/{id}', [InventoryAuditController::class, 'show']);
                 Route::put('/{inventoryAudit}', [InventoryAuditController::class, 'update']);
                 Route::delete('/{inventoryAudit}', [InventoryAuditController::class, 'destroy']);
+            });
+        });
+
+        // Reports
+        Route::prefix('reports')->group(function () {
+            Route::get('search-products', [InventoryReportController::class, 'searchProducts']);
+            Route::prefix('inventory')->group(function () {
+                Route::get('stock-qty', [InventoryReportController::class, 'stockQty']);
             });
         });
 
