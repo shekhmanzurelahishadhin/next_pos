@@ -41,6 +41,9 @@ interface Props {
   children: React.ReactNode;
 }
 
+// full Tailwind class names, so the build keeps them: as many columns as summary cards on wide screens
+const summaryCols: Record<number, string> = { 3: "lg:grid-cols-3", 4: "lg:grid-cols-4", 5: "lg:grid-cols-5", 6: "lg:grid-cols-6" };
+
 const toneClass = {
   success: "text-success-600 dark:text-success-400",
   error: "text-error-600 dark:text-error-400",
@@ -91,7 +94,7 @@ export default function ReportView({ title, lines, company, fileName, rowCount, 
       </div>
 
       {summary && summary.length > 0 && (
-        <div className="grid grid-cols-2 gap-px border-b border-gray-100 bg-gray-100 sm:grid-cols-3 lg:grid-cols-6 dark:border-gray-800 dark:bg-gray-800">
+        <div className={`grid grid-cols-2 gap-px border-b border-gray-100 bg-gray-100 sm:grid-cols-3 ${summaryCols[summary.length] ?? "lg:grid-cols-6"} dark:border-gray-800 dark:bg-gray-800`}>
           {summary.map((s) => (
             <div key={s.label} className="bg-white px-4 py-2.5 dark:bg-gray-900">
               <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">{s.label}</div>

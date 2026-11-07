@@ -120,6 +120,7 @@ const navItems: NavItem[] = [
       { group: "Return", name: "Sales Return Manage", path: "/sales/return-manage", requiredPermissions: ["sale-return.view", "sale-return.create", "sale-return.delete"] },
       { group: "Money Receipt", name: "Money Receipt", path: "/sales/money-receipt", requiredPermissions: ["money-receipt.create"] },
       { group: "Money Receipt", name: "Money Receipt Manage", path: "/sales/money-receipt-manage", requiredPermissions: ["money-receipt.view", "money-receipt.create", "money-receipt.delete"] },
+      { group: "Report", name: "Sales Report", path: "/sales/report/sales", requiredPermissions: ["sales-report.view"] },
     ],
   },
 ];

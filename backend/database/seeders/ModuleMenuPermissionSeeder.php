@@ -885,5 +885,20 @@ class ModuleMenuPermissionSeeder extends Seeder
                 ]
             );
         }
+        // Sales reports (view only)
+        foreach (['Sales Report' => 'sales-report'] as $menuName => $slug) {
+            $reportMenu = Menu::updateOrCreate(
+                ['name' => $menuName, 'module_id' => $salesModule->id],
+                ['slug' => $slug]
+            );
+            Permission::updateOrCreate(
+                ['name' => "{$slug}.view", 'guard_name' => 'web'],
+                [
+                    'module_id'   => $salesModule->id,
+                    'menu_id'     => $reportMenu->id,
+                    'sub_menu_id' => null,
+                ]
+            );
+        }
     }
 }

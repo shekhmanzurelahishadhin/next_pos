@@ -44,6 +44,35 @@ export interface ProductStockReport {
   company: ReportCompany | null;
 }
 
+export interface SalesReportRow {
+  id: number;
+  sale_id: number;
+  so_no: string;
+  order_date: string;
+  grand_total: number;
+  customer_name: string | null;
+  product_name: string;
+  part_number: string;
+  barcode: string;
+  qty: number;
+  sell_price: number;
+  discount: number;
+  total_amount: number;
+}
+
+export interface SalesReport {
+  rows: SalesReportRow[];
+  company: ReportCompany | null;
+  labels: Record<string, string> | []; // picked filters by name, for the header
+}
+
+export interface ReportCustomer {
+  id: number;
+  name: string;
+  phone: string | null;
+  code: string | null;
+}
+
 export interface ReportProduct {
   id: number;
   name: string;
@@ -53,6 +82,16 @@ export interface ReportProduct {
 class ReportService {
   async searchProducts(term: string): Promise<ReportProduct[]> {
     const res = await api.get("/reports/search-products", { params: { term } });
+    return res.data.data;
+  }
+
+  async searchCustomers(term: string): Promise<ReportCustomer[]> {
+    const res = await api.get("/reports/search-customers", { params: { term } });
+    return res.data.data;
+  }
+
+  async sales(filters: Record<string, string>): Promise<SalesReport> {
+    const res = await api.get("/reports/sales/sales", { params: filters });
     return res.data.data;
   }
 
