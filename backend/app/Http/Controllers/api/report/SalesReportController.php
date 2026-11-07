@@ -12,6 +12,7 @@ class SalesReportController extends Controller
     public function __construct(private SalesReportService $service)
     {
         $this->middleware('permission:sales-report.view')->only('sales');
+        $this->middleware('permission:sales-summary-report.view')->only('salesSummary');
     }
 
     public function sales(Request $request)
@@ -27,6 +28,23 @@ class SalesReportController extends Controller
         ]);
 
         return ApiResponse::success($this->service->sales($filters), 'Sales report retrieve successfully');
+    }
+
+    public function salesSummary(Request $request)
+    {
+        $filters = $request->validate([
+            'start_date' => 'required|date',
+            'end_date' => 'required|date|after_or_equal:start_date',
+            'company_id' => 'nullable|integer',
+            'customer_type_id' => 'nullable|integer',
+            'customer_id' => 'nullable|integer',
+            'paid' => 'nullable|in:0,1',
+        ]);
+        if (isset($filters['paid'])) {
+            $filters['paid'] = (int) $filters['paid'];
+        }
+
+        return ApiResponse::success($this->service->salesSummary($filters), 'Sales summary report retrieve successfully');
     }
 
     public function searchCustomers(Request $request)

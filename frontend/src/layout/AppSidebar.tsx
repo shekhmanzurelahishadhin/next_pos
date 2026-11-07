@@ -121,6 +121,7 @@ const navItems: NavItem[] = [
       { group: "Money Receipt", name: "Money Receipt", path: "/sales/money-receipt", requiredPermissions: ["money-receipt.create"] },
       { group: "Money Receipt", name: "Money Receipt Manage", path: "/sales/money-receipt-manage", requiredPermissions: ["money-receipt.view", "money-receipt.create", "money-receipt.delete"] },
       { group: "Report", name: "Sales Report", path: "/sales/report/sales", requiredPermissions: ["sales-report.view"] },
+      { group: "Report", name: "Sales Summary Report", path: "/sales/report/sales-summary", requiredPermissions: ["sales-summary-report.view"] },
     ],
   },
 ];

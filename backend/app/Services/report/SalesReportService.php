@@ -63,6 +63,66 @@ class SalesReportService
         ];
     }
 
+    // Sales Summary Report (parts_bazar sellItems/salesSummaryReport): one row per approved bill
+    // with the money received against it and the balance due
+    public function salesSummary(array $filters): array
+    {
+        $received = DB::table('money_receipts')
+            ->whereNull('deleted_at')
+            ->whereNotNull('sale_id')
+            ->selectRaw('sale_id, SUM(amount) AS received_amount')
+            ->groupBy('sale_id');
+
+        $query = DB::table('sales as s')
+            ->join('customers as c', 'c.id', '=', 's.customer_id')
+            ->leftJoin('lookups as ct', 'ct.id', '=', 'c.customer_type_id')
+            ->leftJoin('companies as com', 'com.id', '=', 's.company_id')
+            ->leftJoinSub($received, 'mr', 'mr.sale_id', '=', 's.id')
+            ->whereNull('s.deleted_at')
+            ->where('s.status', Sale::APPROVED)
+            ->whereBetween('s.order_date', [$filters['start_date'], $filters['end_date']])
+            ->select(
+                's.id', 's.so_no', 's.order_date', 's.grand_total', 'c.name as customer_name',
+                'ct.name as customer_type', 'com.name as company_name',
+                DB::raw('COALESCE(mr.received_amount, 0) AS received_amount')
+            );
+
+        if ($companyId = $this->ownCompanyId()) {
+            $query->where('s.company_id', $companyId);
+        }
+
+        // 1 = paid (received the full bill), 0 = due
+        $paid = $filters['paid'] ?? null;
+        $rows = $query
+            ->when($filters['company_id'] ?? null, fn($q, $v) => $q->where('s.company_id', $v))
+            ->when($filters['customer_type_id'] ?? null, fn($q, $v) => $q->where('c.customer_type_id', $v))
+            ->when($filters['customer_id'] ?? null, fn($q, $v) => $q->where('s.customer_id', $v))
+            ->when($paid !== null, fn($q) => $paid
+                ? $q->whereRaw('COALESCE(mr.received_amount, 0) >= s.grand_total')
+                : $q->whereRaw('COALESCE(mr.received_amount, 0) < s.grand_total'))
+            ->orderBy('s.order_date')
+            ->orderBy('s.id')
+            ->get()
+            ->map(function ($row) {
+                $row->grand_total = (float) $row->grand_total;
+                $row->received_amount = (float) $row->received_amount;
+                $row->due_amount = round($row->grand_total - $row->received_amount, 2);
+                $row->paid = $row->due_amount <= 0;
+                return $row;
+            });
+
+        return [
+            'rows' => $rows,
+            'company' => $this->inventoryReports->company($filters['company_id'] ?? null),
+            'labels' => array_filter([
+                'Company' => $this->name('companies', $filters['company_id'] ?? null),
+                'Customer Type' => $this->name('lookups', $filters['customer_type_id'] ?? null),
+                'Customer' => $this->name('customers', $filters['customer_id'] ?? null),
+                'Order Status' => $paid === null ? null : ($paid ? 'Paid' : 'Due'),
+            ]),
+        ];
+    }
+
     // customer picker of the report search forms
     public function searchCustomers(string $term)
     {

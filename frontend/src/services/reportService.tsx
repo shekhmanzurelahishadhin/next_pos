@@ -66,6 +66,25 @@ export interface SalesReport {
   labels: Record<string, string> | []; // picked filters by name, for the header
 }
 
+export interface SalesSummaryRow {
+  id: number;
+  so_no: string;
+  order_date: string;
+  grand_total: number;
+  customer_name: string;
+  customer_type: string | null;
+  company_name: string | null;
+  received_amount: number;
+  due_amount: number;
+  paid: boolean;
+}
+
+export interface SalesSummaryReport {
+  rows: SalesSummaryRow[];
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
 export interface ReportCustomer {
   id: number;
   name: string;
@@ -92,6 +111,11 @@ class ReportService {
 
   async sales(filters: Record<string, string>): Promise<SalesReport> {
     const res = await api.get("/reports/sales/sales", { params: filters });
+    return res.data.data;
+  }
+
+  async salesSummary(filters: Record<string, string>): Promise<SalesSummaryReport> {
+    const res = await api.get("/reports/sales/sales-summary", { params: filters });
     return res.data.data;
   }
 

@@ -886,7 +886,7 @@ class ModuleMenuPermissionSeeder extends Seeder
             );
         }
         // Sales reports (view only)
-        foreach (['Sales Report' => 'sales-report'] as $menuName => $slug) {
+        foreach (['Sales Report' => 'sales-report', 'Sales Summary Report' => 'sales-summary-report'] as $menuName => $slug) {
             $reportMenu = Menu::updateOrCreate(
                 ['name' => $menuName, 'module_id' => $salesModule->id],
                 ['slug' => $slug]
