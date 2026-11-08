@@ -274,6 +274,7 @@ Route::prefix('v1')->group(function () {
                 Route::get('sales', [SalesReportController::class, 'sales']);
                 Route::get('sales-summary', [SalesReportController::class, 'salesSummary']);
                 Route::get('sales-return', [SalesReportController::class, 'salesReturn']);
+                Route::get('collection', [SalesReportController::class, 'collection']);
             });
         });
 

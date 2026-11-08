@@ -17,6 +17,9 @@ class MoneyReceipt extends Model
     const ADVANCE = 'advance';  // order_no of the part of the lot not given to any invoice
     const ADJUSTMENT = '5';     // received_type: old advance pays the invoices, no new money comes in
 
+    // received_type names, same as PAYMENT_TYPES in frontend/src/lib/payment.ts
+    const TYPE_NAMES = ['1' => 'Cash', '2' => 'Cheque', '3' => 'Deposit Into Bank', '4' => 'Card', '5' => 'Adjustment'];
+
     protected $guarded = ['id'];
 
     protected $casts = [

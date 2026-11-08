@@ -108,6 +108,25 @@ export interface SalesReturnReport {
   labels: Record<string, string> | [];
 }
 
+export interface CollectionRow {
+  mr_no: string;
+  receipt_date: string;
+  received_type: string | null;
+  bank_name: string | null;
+  customer_name: string | null;
+  received_amount: number;
+  discount: number;
+  vds: number;
+  tds: number;
+  total_amount: number;
+}
+
+export interface CollectionReport {
+  rows: CollectionRow[];
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
 export interface ReportCustomer {
   id: number;
   name: string;
@@ -144,6 +163,11 @@ class ReportService {
 
   async salesReturn(filters: Record<string, string>): Promise<SalesReturnReport> {
     const res = await api.get("/reports/sales/sales-return", { params: filters });
+    return res.data.data;
+  }
+
+  async collection(filters: Record<string, string>): Promise<CollectionReport> {
+    const res = await api.get("/reports/sales/collection", { params: filters });
     return res.data.data;
   }
 

@@ -2,6 +2,7 @@
 
 namespace App\Services\report;
 
+use App\Models\sales\MoneyReceipt;
 use App\Models\sales\Sale;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -173,6 +174,54 @@ class SalesReportService
                 'Sub-Category' => $this->name('sub_categories', $filters['sub_category_id'] ?? null),
                 'Item' => $this->name('products', $filters['product_id'] ?? null),
                 'Barcode' => $filters['barcode'] ?? null,
+            ]),
+        ];
+    }
+
+    // Collection Report (parts_bazar moneyReceipt/collectionReport): one row per money receipt (MR no)
+    // with the received, discount, VDS and TDS; adjustments (old advance used) are left out unless asked
+    public function collection(array $filters): array
+    {
+        $query = DB::table('money_receipts as m')
+            ->leftJoin('customers as c', 'c.id', '=', 'm.customer_id')
+            ->whereNull('m.deleted_at')
+            ->whereBetween('m.receipt_date', [$filters['start_date'], $filters['end_date']])
+            ->selectRaw('
+                m.mr_no, MIN(m.receipt_date) AS receipt_date, MIN(m.received_type) AS received_type, MIN(m.bank_name) AS bank_name,
+                MIN(c.name) AS customer_name, SUM(m.amount) AS received_amount, SUM(m.discount) AS discount,
+                SUM(m.vds) AS vds, SUM(m.tds) AS tds, MAX(m.id) AS last_id')
+            ->groupBy('m.mr_no');
+
+        if ($companyId = $this->ownCompanyId()) {
+            $query->where('m.company_id', $companyId);
+        }
+
+        $type = $filters['received_type'] ?? null;
+        $rows = $query
+            ->when($type, fn($q) => $q->where('m.received_type', $type), fn($q) => $q->where('m.received_type', '<>', MoneyReceipt::ADJUSTMENT))
+            ->when($filters['company_id'] ?? null, fn($q, $v) => $q->where('m.company_id', $v))
+            ->when($filters['bank_name'] ?? null, fn($q, $v) => $q->where('m.bank_name', $v))
+            ->when($filters['customer_id'] ?? null, fn($q, $v) => $q->where('m.customer_id', $v))
+            ->orderByDesc('receipt_date')
+            ->orderByDesc('last_id')
+            ->get()
+            ->map(function ($row) {
+                foreach (['received_amount', 'discount', 'vds', 'tds'] as $field) {
+                    $row->$field = (float) $row->$field;
+                }
+                $row->total_amount = round($row->received_amount + $row->discount + $row->vds + $row->tds, 2);
+                unset($row->last_id);
+                return $row;
+            });
+
+        return [
+            'rows' => $rows,
+            'company' => $this->inventoryReports->company($filters['company_id'] ?? null),
+            'labels' => array_filter([
+                'Company' => $this->name('companies', $filters['company_id'] ?? null),
+                'Collection Type' => $type ? (MoneyReceipt::TYPE_NAMES[$type] ?? $type) : null,
+                'Bank Name' => $filters['bank_name'] ?? null,
+                'Customer' => $this->name('customers', $filters['customer_id'] ?? null),
             ]),
         ];
     }
