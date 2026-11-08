@@ -10,7 +10,7 @@ import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import DatePicker from "@/components/form/date-picker";
 import ReactSelect from "@/components/form/ReactSelect";
 import ReportSearchCard, { ReportField, reportInputClass } from "@/components/report/ReportSearchCard";
-import ReportView, { rptTd, rptTh, rptTotal } from "@/components/report/ReportView";
+import ReportView, { groupSpans, rptTd, rptTh, rptTotal } from "@/components/report/ReportView";
 import { CustomerPicker, ProductPicker } from "@/components/report/ReportPickers";
 import { reportService, SalesReport } from "@/services/reportService";
 
@@ -86,15 +86,8 @@ export default function SalesReportPage() {
 
   const rows = useMemo(() => report?.rows ?? [], [report]);
 
-  // lines of one order are next to each other: the first line gets the merged cells
-  const orderSpan = useMemo(() => {
-    const span: Record<number, number> = {};
-    rows.forEach((r, i) => {
-      if (i > 0 && rows[i - 1].sale_id === r.sale_id) return;
-      span[i] = rows.filter((x) => x.sale_id === r.sale_id).length;
-    });
-    return span;
-  }, [rows]);
+  // the first line of an order gets the merged cells
+  const orderSpan = useMemo(() => groupSpans(rows, (r) => r.sale_id), [rows]);
 
   const totals = useMemo(() => {
     const orders = new Map(rows.map((r) => [r.sale_id, r.grand_total]));

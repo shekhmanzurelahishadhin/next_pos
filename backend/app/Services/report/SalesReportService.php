@@ -123,6 +123,60 @@ class SalesReportService
         ];
     }
 
+    // Sales Return Report (parts_bazar sellReturn/sellReturnReport): every returned line between the dates
+    // next to the sale line it came from
+    public function salesReturn(array $filters): array
+    {
+        $query = DB::table('sale_return_details as rd')
+            ->join('sale_returns as r', 'r.id', '=', 'rd.sale_return_id')
+            ->join('sale_details as d', 'd.id', '=', 'rd.sale_detail_id')
+            ->join('sales as s', 's.id', '=', 'r.sale_id')
+            ->join('products as p', 'p.id', '=', 'rd.product_id')
+            ->leftJoin('customers as c', 'c.id', '=', 'r.customer_id')
+            ->whereNull('rd.deleted_at')
+            ->whereNull('r.deleted_at')
+            ->whereBetween('r.return_date', [$filters['start_date'], $filters['end_date']])
+            ->select(
+                'rd.id', 'r.id as return_id', 'r.return_no', 'r.return_date', 's.so_no', 'c.name as customer_name',
+                'p.name as product_name', 'p.part_number', 'rd.barcode',
+                'd.qty as sale_qty', 'd.sell_price', 'd.total_amount as sale_amount', 'rd.return_qty', 'rd.total_price as return_amount'
+            );
+
+        if ($companyId = $this->ownCompanyId()) {
+            $query->where('r.company_id', $companyId);
+        }
+
+        $rows = $query
+            ->when($filters['company_id'] ?? null, fn($q, $v) => $q->where('r.company_id', $v))
+            ->when($filters['customer_id'] ?? null, fn($q, $v) => $q->where('r.customer_id', $v))
+            ->when($filters['category_id'] ?? null, fn($q, $v) => $q->where('p.product_category_id', $v))
+            ->when($filters['sub_category_id'] ?? null, fn($q, $v) => $q->where('p.sub_category_id', $v))
+            ->when($filters['product_id'] ?? null, fn($q, $v) => $q->where('rd.product_id', $v))
+            ->when($filters['barcode'] ?? null, fn($q, $v) => $q->where('rd.barcode', $v))
+            ->orderBy('r.return_no')
+            ->orderBy('rd.id')
+            ->get()
+            ->map(function ($row) {
+                foreach (['sale_qty', 'sell_price', 'sale_amount', 'return_qty', 'return_amount'] as $field) {
+                    $row->$field = (float) $row->$field;
+                }
+                return $row;
+            });
+
+        return [
+            'rows' => $rows,
+            'company' => $this->inventoryReports->company($filters['company_id'] ?? null),
+            'labels' => array_filter([
+                'Company' => $this->name('companies', $filters['company_id'] ?? null),
+                'Customer' => $this->name('customers', $filters['customer_id'] ?? null),
+                'Category' => $this->name('categories', $filters['category_id'] ?? null),
+                'Sub-Category' => $this->name('sub_categories', $filters['sub_category_id'] ?? null),
+                'Item' => $this->name('products', $filters['product_id'] ?? null),
+                'Barcode' => $filters['barcode'] ?? null,
+            ]),
+        ];
+    }
+
     // customer picker of the report search forms
     public function searchCustomers(string $term)
     {

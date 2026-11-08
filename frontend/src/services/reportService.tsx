@@ -85,6 +85,29 @@ export interface SalesSummaryReport {
   labels: Record<string, string> | [];
 }
 
+export interface SalesReturnRow {
+  id: number;
+  return_id: number;
+  return_no: string;
+  return_date: string;
+  so_no: string;
+  customer_name: string | null;
+  product_name: string;
+  part_number: string;
+  barcode: string | null;
+  sale_qty: number;
+  sell_price: number;
+  sale_amount: number;
+  return_qty: number;
+  return_amount: number;
+}
+
+export interface SalesReturnReport {
+  rows: SalesReturnRow[];
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
 export interface ReportCustomer {
   id: number;
   name: string;
@@ -116,6 +139,11 @@ class ReportService {
 
   async salesSummary(filters: Record<string, string>): Promise<SalesSummaryReport> {
     const res = await api.get("/reports/sales/sales-summary", { params: filters });
+    return res.data.data;
+  }
+
+  async salesReturn(filters: Record<string, string>): Promise<SalesReturnReport> {
+    const res = await api.get("/reports/sales/sales-return", { params: filters });
     return res.data.data;
   }
 

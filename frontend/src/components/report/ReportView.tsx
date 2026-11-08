@@ -31,6 +31,18 @@ export const rptTh = "rpt-th sticky -top-px z-10 border border-gray-200 bg-gray-
 export const rptTd = "border border-gray-200 px-2 py-1.5 dark:border-gray-700";
 export const rptTotal = "rpt-total bg-gray-50 font-semibold text-gray-800 dark:bg-white/[0.04] dark:text-white/90";
 
+// rows of one group (an order, a return ...) are next to each other: the first row of a group
+// gets how many rows to merge over (rowSpan), the other rows get nothing
+export function groupSpans<T>(rows: T[], groupOf: (row: T) => string | number): Record<number, number> {
+  const spans: Record<number, number> = {};
+  let start = 0;
+  rows.forEach((row, i) => {
+    if (i > 0 && groupOf(rows[i - 1]) === groupOf(row)) spans[start]++;
+    else spans[(start = i)] = 1;
+  });
+  return spans;
+}
+
 interface Props {
   title: string;
   lines: string[]; // under the title: period, store ...
