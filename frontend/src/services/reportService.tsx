@@ -148,6 +148,22 @@ export interface InvoiceCollectionReport {
   labels: Record<string, string> | [];
 }
 
+export interface CustomerDueRow {
+  id: number;
+  customer_name: string;
+  phone: string | null;
+  code: string | null;
+  due_amount: number;
+  bill_qty: number;
+  due_days: number;
+}
+
+export interface CustomerDueReport {
+  rows: CustomerDueRow[];
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
 export interface ReportCustomer {
   id: number;
   name: string;
@@ -194,6 +210,11 @@ class ReportService {
 
   async invoiceCollection(filters: Record<string, string>): Promise<InvoiceCollectionReport> {
     const res = await api.get("/reports/sales/invoice-collection", { params: filters });
+    return res.data.data;
+  }
+
+  async customerDue(filters: Record<string, string>): Promise<CustomerDueReport> {
+    const res = await api.get("/reports/sales/customer-due", { params: filters });
     return res.data.data;
   }
 

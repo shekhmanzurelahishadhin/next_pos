@@ -4,6 +4,7 @@ namespace App\Services\report;
 
 use App\Models\sales\MoneyReceipt;
 use App\Models\sales\Sale;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -277,6 +278,86 @@ class SalesReportService
             'Bank Name' => $filters['bank_name'] ?? null,
             'Customer' => $this->name('customers', $filters['customer_id'] ?? null),
         ]);
+    }
+
+    // Customer Due Report (parts_bazar sellItems/dueReport): every customer who owes money up to the date.
+    // Due = opening + approved sales + refunds - money received - returns (same as SaleService::customerDue);
+    // bill qty and due days come from the bills not fully paid, due days counted from the oldest one
+    public function customerDue(array $filters): array
+    {
+        $upTo = $filters['end_date'];
+
+        $sales = DB::table('sales')->whereNull('deleted_at')->where('status', Sale::APPROVED)->where('order_date', '<=', $upTo)
+            ->selectRaw('customer_id, SUM(grand_total) AS amount')->groupBy('customer_id');
+        // an Adjustment MR only moves old advance onto invoices, its amount was counted already
+        $received = DB::table('money_receipts')->whereNull('deleted_at')->where('receipt_date', '<=', $upTo)
+            ->selectRaw("customer_id, SUM(IF(received_type = ?, 0, amount) + discount + vds + tds) AS amount", [MoneyReceipt::ADJUSTMENT])
+            ->groupBy('customer_id');
+        $returns = DB::table('sale_returns')->whereNull('deleted_at')->where('return_date', '<=', $upTo)
+            ->selectRaw('customer_id, SUM(total_amount) AS returned, SUM(refund_amount) AS refunded')->groupBy('customer_id');
+
+        $query = DB::table('customers as c')
+            ->leftJoinSub($sales, 'sa', 'sa.customer_id', '=', 'c.id')
+            ->leftJoinSub($received, 'mr', 'mr.customer_id', '=', 'c.id')
+            ->leftJoinSub($returns, 'rt', 'rt.customer_id', '=', 'c.id')
+            ->whereNull('c.deleted_at')
+            ->select('c.id', 'c.name as customer_name', 'c.phone', 'c.code')
+            ->selectRaw("ROUND(IF(c.opening_balance_type = '2', -1, 1) * COALESCE(c.opening_balance, 0)
+                + COALESCE(sa.amount, 0) + COALESCE(rt.refunded, 0) - COALESCE(mr.amount, 0) - COALESCE(rt.returned, 0), 2) AS due_amount")
+            ->having('due_amount', '>', 0);
+
+        if ($companyId = $this->ownCompanyId()) {
+            $query->where('c.company_id', $companyId);
+        }
+
+        $rows = $query
+            ->when($filters['company_id'] ?? null, fn($q, $v) => $q->where('c.company_id', $v))
+            ->when($filters['customer_id'] ?? null, fn($q, $v) => $q->where('c.id', $v))
+            ->orderByDesc('due_amount')
+            ->get();
+
+        $bills = $this->unpaidBills($rows->pluck('id')->all(), $upTo);
+        $rows = $rows->map(function ($row) use ($bills, $upTo) {
+            $own = $bills->get($row->id);
+            $row->due_amount = (float) $row->due_amount;
+            $row->bill_qty = $own ? count($own) : 0;
+            $row->due_days = $own ? (int) Carbon::parse($own->min('order_date'))->diffInDays($upTo) : 0;
+            return $row;
+        });
+
+        return [
+            'rows' => $rows,
+            'company' => $this->inventoryReports->company($filters['company_id'] ?? null),
+            'labels' => array_filter([
+                'Company' => $this->name('companies', $filters['company_id'] ?? null),
+                'Customer' => $this->name('customers', $filters['customer_id'] ?? null),
+            ]),
+        ];
+    }
+
+    // approved bills up to the date that the money received and the returns do not cover yet, by customer
+    private function unpaidBills(array $customerIds, string $upTo)
+    {
+        if (!$customerIds) {
+            return collect();
+        }
+
+        $paid = DB::table('money_receipts')->whereNull('deleted_at')->whereNotNull('sale_id')
+            ->selectRaw('sale_id, SUM(amount + discount + vds + tds) AS amount')->groupBy('sale_id');
+        $returned = DB::table('sale_returns')->whereNull('deleted_at')
+            ->selectRaw('sale_id, SUM(total_amount - refund_amount) AS amount')->groupBy('sale_id');
+
+        return DB::table('sales as s')
+            ->leftJoinSub($paid, 'p', 'p.sale_id', '=', 's.id')
+            ->leftJoinSub($returned, 'r', 'r.sale_id', '=', 's.id')
+            ->whereNull('s.deleted_at')
+            ->where('s.status', Sale::APPROVED)
+            ->where('s.order_date', '<=', $upTo)
+            ->whereIn('s.customer_id', $customerIds)
+            ->whereRaw('COALESCE(p.amount, 0) + COALESCE(r.amount, 0) < s.grand_total')
+            ->select('s.customer_id', 's.order_date')
+            ->get()
+            ->groupBy('customer_id');
     }
 
     // customer picker of the report search forms
