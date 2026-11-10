@@ -891,6 +891,7 @@ class ModuleMenuPermissionSeeder extends Seeder
             'Sales Summary Report' => 'sales-summary-report',
             'Sales Return Report' => 'sales-return-report',
             'Collection Report' => 'collection-report',
+            'Invoice Wise Collection Report' => 'invoice-wise-collection-report',
         ];
         foreach ($reports as $menuName => $slug) {
             $reportMenu = Menu::updateOrCreate(

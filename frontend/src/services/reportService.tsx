@@ -127,6 +127,27 @@ export interface CollectionReport {
   labels: Record<string, string> | [];
 }
 
+export interface InvoiceCollectionRow {
+  id: number;
+  mr_no: string;
+  receipt_date: string;
+  received_type: string | null;
+  invoice_no: string | null;
+  memo_no: string | null;
+  customer_name: string | null;
+  received_amount: number;
+  discount: number;
+  vds: number;
+  tds: number;
+  mr_total: number;
+}
+
+export interface InvoiceCollectionReport {
+  rows: InvoiceCollectionRow[];
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
 export interface ReportCustomer {
   id: number;
   name: string;
@@ -168,6 +189,11 @@ class ReportService {
 
   async collection(filters: Record<string, string>): Promise<CollectionReport> {
     const res = await api.get("/reports/sales/collection", { params: filters });
+    return res.data.data;
+  }
+
+  async invoiceCollection(filters: Record<string, string>): Promise<InvoiceCollectionReport> {
+    const res = await api.get("/reports/sales/invoice-collection", { params: filters });
     return res.data.data;
   }
 

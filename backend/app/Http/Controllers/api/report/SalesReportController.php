@@ -15,6 +15,7 @@ class SalesReportController extends Controller
         $this->middleware('permission:sales-summary-report.view')->only('salesSummary');
         $this->middleware('permission:sales-return-report.view')->only('salesReturn');
         $this->middleware('permission:collection-report.view')->only('collection');
+        $this->middleware('permission:invoice-wise-collection-report.view')->only('invoiceCollection');
     }
 
     public function sales(Request $request)
@@ -67,7 +68,17 @@ class SalesReportController extends Controller
 
     public function collection(Request $request)
     {
-        $filters = $request->validate([
+        return ApiResponse::success($this->service->collection($this->receiptFilters($request)), 'Collection report retrieve successfully');
+    }
+
+    public function invoiceCollection(Request $request)
+    {
+        return ApiResponse::success($this->service->invoiceCollection($this->receiptFilters($request)), 'Invoice wise collection report retrieve successfully');
+    }
+
+    private function receiptFilters(Request $request): array
+    {
+        return $request->validate([
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
             'company_id' => 'nullable|integer',
@@ -75,8 +86,6 @@ class SalesReportController extends Controller
             'bank_name' => 'nullable|string|max:255',
             'customer_id' => 'nullable|integer',
         ]);
-
-        return ApiResponse::success($this->service->collection($filters), 'Collection report retrieve successfully');
     }
 
     public function searchCustomers(Request $request)

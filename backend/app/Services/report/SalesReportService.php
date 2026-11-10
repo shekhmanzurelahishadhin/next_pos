@@ -182,26 +182,14 @@ class SalesReportService
     // with the received, discount, VDS and TDS; adjustments (old advance used) are left out unless asked
     public function collection(array $filters): array
     {
-        $query = DB::table('money_receipts as m')
-            ->leftJoin('customers as c', 'c.id', '=', 'm.customer_id')
-            ->whereNull('m.deleted_at')
-            ->whereBetween('m.receipt_date', [$filters['start_date'], $filters['end_date']])
+        $type = $filters['received_type'] ?? null;
+        $rows = $this->receiptQuery($filters)
             ->selectRaw('
                 m.mr_no, MIN(m.receipt_date) AS receipt_date, MIN(m.received_type) AS received_type, MIN(m.bank_name) AS bank_name,
                 MIN(c.name) AS customer_name, SUM(m.amount) AS received_amount, SUM(m.discount) AS discount,
                 SUM(m.vds) AS vds, SUM(m.tds) AS tds, MAX(m.id) AS last_id')
-            ->groupBy('m.mr_no');
-
-        if ($companyId = $this->ownCompanyId()) {
-            $query->where('m.company_id', $companyId);
-        }
-
-        $type = $filters['received_type'] ?? null;
-        $rows = $query
-            ->when($type, fn($q) => $q->where('m.received_type', $type), fn($q) => $q->where('m.received_type', '<>', MoneyReceipt::ADJUSTMENT))
-            ->when($filters['company_id'] ?? null, fn($q, $v) => $q->where('m.company_id', $v))
-            ->when($filters['bank_name'] ?? null, fn($q, $v) => $q->where('m.bank_name', $v))
-            ->when($filters['customer_id'] ?? null, fn($q, $v) => $q->where('m.customer_id', $v))
+            ->groupBy('m.mr_no')
+            ->when(!$type, fn($q) => $q->where('m.received_type', '<>', MoneyReceipt::ADJUSTMENT))
             ->orderByDesc('receipt_date')
             ->orderByDesc('last_id')
             ->get()
@@ -217,13 +205,78 @@ class SalesReportService
         return [
             'rows' => $rows,
             'company' => $this->inventoryReports->company($filters['company_id'] ?? null),
-            'labels' => array_filter([
-                'Company' => $this->name('companies', $filters['company_id'] ?? null),
-                'Collection Type' => $type ? (MoneyReceipt::TYPE_NAMES[$type] ?? $type) : null,
-                'Bank Name' => $filters['bank_name'] ?? null,
-                'Customer' => $this->name('customers', $filters['customer_id'] ?? null),
-            ]),
+            'labels' => $this->receiptLabels($filters),
         ];
+    }
+
+    // Invoice Wise Collection Report (parts_bazar moneyReceipt/invoiceWiseCollectionReport): every invoice line
+    // of the money receipts; date, MR no, customer, type and the MR total are merged over the lines of one MR
+    public function invoiceCollection(array $filters): array
+    {
+        $mrTotals = DB::table('money_receipts')
+            ->whereNull('deleted_at')
+            ->selectRaw('mr_no, SUM(amount + discount + vds + tds) AS mr_total')
+            ->groupBy('mr_no');
+
+        $rows = $this->receiptQuery($filters)
+            ->leftJoin('sales as s', 's.id', '=', 'm.sale_id')
+            ->joinSub($mrTotals, 'mt', 'mt.mr_no', '=', 'm.mr_no')
+            ->select(
+                'm.id', 'm.mr_no', 'm.receipt_date', 'm.received_type', 'm.order_no', 's.memo_no', 'c.name as customer_name',
+                'm.amount as received_amount', 'm.discount', 'm.vds', 'm.tds', 'mt.mr_total'
+            )
+            ->orderByDesc('m.receipt_date')
+            ->orderByDesc('m.mr_no')
+            ->orderBy('m.id')
+            ->get()
+            ->map(function ($row) {
+                foreach (['received_amount', 'discount', 'vds', 'tds', 'mr_total'] as $field) {
+                    $row->$field = (float) $row->$field;
+                }
+                // opening balance and advance lines have no invoice
+                $row->invoice_no = match ($row->order_no) {
+                    MoneyReceipt::OPENING => 'Opening Balance',
+                    MoneyReceipt::ADVANCE => 'Advance',
+                    default => $row->order_no,
+                };
+                return $row;
+            });
+
+        return [
+            'rows' => $rows,
+            'company' => $this->inventoryReports->company($filters['company_id'] ?? null),
+            'labels' => $this->receiptLabels($filters),
+        ];
+    }
+
+    // money receipts between the dates with the filters both collection reports have
+    private function receiptQuery(array $filters)
+    {
+        $query = DB::table('money_receipts as m')
+            ->leftJoin('customers as c', 'c.id', '=', 'm.customer_id')
+            ->whereNull('m.deleted_at')
+            ->whereBetween('m.receipt_date', [$filters['start_date'], $filters['end_date']]);
+
+        if ($companyId = $this->ownCompanyId()) {
+            $query->where('m.company_id', $companyId);
+        }
+
+        return $query
+            ->when($filters['received_type'] ?? null, fn($q, $v) => $q->where('m.received_type', $v))
+            ->when($filters['company_id'] ?? null, fn($q, $v) => $q->where('m.company_id', $v))
+            ->when($filters['bank_name'] ?? null, fn($q, $v) => $q->where('m.bank_name', $v))
+            ->when($filters['customer_id'] ?? null, fn($q, $v) => $q->where('m.customer_id', $v));
+    }
+
+    private function receiptLabels(array $filters): array
+    {
+        $type = $filters['received_type'] ?? null;
+        return array_filter([
+            'Company' => $this->name('companies', $filters['company_id'] ?? null),
+            'Collection Type' => $type ? (MoneyReceipt::TYPE_NAMES[$type] ?? $type) : null,
+            'Bank Name' => $filters['bank_name'] ?? null,
+            'Customer' => $this->name('customers', $filters['customer_id'] ?? null),
+        ]);
     }
 
     // customer picker of the report search forms
