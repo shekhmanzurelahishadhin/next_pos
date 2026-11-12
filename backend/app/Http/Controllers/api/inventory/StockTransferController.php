@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\inventory\StockTransferRequest;
 use App\Models\inventory\StockTransfer;
 use App\Services\inventory\StockTransferService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 
 class StockTransferController extends Controller
@@ -25,10 +26,9 @@ class StockTransferController extends Controller
     // Stock Transfer Manage: one row per transfer
     public function index(Request $request)
     {
-        $rows = $this->service->getRows(
-            $request->only('transfer_no', 'transfer_date', 'created_by_name', 'approved_by_name', 'status'),
-            $request->get('per_page')
-        );
+        $filters = $request->only('transfer_no', 'transfer_date', 'created_by_name', 'approved_by_name', 'status');
+        $rows = $this->service->getRows($filters, $request->get('per_page'));
+
         return ApiResponse::success(['data' => $rows->items(), 'total' => $rows->total()], 'Stock transfers retrieve successfully');
     }
 
@@ -38,56 +38,75 @@ class StockTransferController extends Controller
         if (mb_strlen($term) < 2) {
             return ApiResponse::success([], 'Type at least 2 characters');
         }
-        return ApiResponse::success(
-            $this->service->searchBarcodes($term, $request->integer('company_id') ?: null, $request->integer('except_id') ?: null),
-            'Barcodes'
-        );
+
+        // 0 or empty = no company filter / no transfer being edited
+        $companyId = $request->integer('company_id') ?: null;
+        $exceptTransferId = $request->integer('except_id') ?: null;
+
+        return ApiResponse::success($this->service->searchBarcodes($term, $companyId, $exceptTransferId), 'Barcodes');
     }
 
     public function store(StockTransferRequest $request)
     {
-        return $this->run(
-            fn() => ['id' => $this->service->createTransfer($request->validated())->id],
-            'Stock Transfer Saved Successfully.',
-            201
-        );
+        try {
+            $transfer = $this->service->createTransfer($request->validated());
+            return ApiResponse::success(['id' => $transfer->id], 'Stock Transfer Saved Successfully.', 201);
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function show(int $id)
     {
-        return $this->run(fn() => $this->service->getTransfer($id), 'Stock transfer retrieve successfully');
+        try {
+            return ApiResponse::success($this->service->getTransfer($id), 'Stock transfer retrieve successfully');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function update(StockTransferRequest $request, StockTransfer $stockTransfer)
     {
-        return $this->run(
-            fn() => ['id' => $this->service->updateTransfer($stockTransfer, $request->validated())->id],
-            'Stock Transfer Updated Successfully.'
-        );
+        try {
+            $transfer = $this->service->updateTransfer($stockTransfer, $request->validated());
+            return ApiResponse::success(['id' => $transfer->id], 'Stock Transfer Updated Successfully.');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function approve(StockTransfer $stockTransfer)
     {
-        return $this->run(fn() => $this->service->approveTransfer($stockTransfer), 'Stock Transfer Approved Successfully');
+        try {
+            $this->service->approveTransfer($stockTransfer);
+            return ApiResponse::success(null, 'Stock Transfer Approved Successfully');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function destroy(StockTransfer $stockTransfer)
     {
-        return $this->run(fn() => $this->service->deleteTransfer($stockTransfer), 'Stock transfer deleted successfully');
+        try {
+            $this->service->deleteTransfer($stockTransfer);
+            return ApiResponse::success(null, 'Stock transfer deleted successfully');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
-    // business rule errors go back as 422 with the message
-    private function run(callable $action, string $message, int $code = 200)
+    // Not found goes back as 404, a business rule error as 422 with its message,
+    // any other error is logged and a general message is sent
+    private function errorResponse(\Exception $e)
     {
-        try {
-            return ApiResponse::success($action(), $message, $code);
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        if ($e instanceof ModelNotFoundException) {
             return ApiResponse::error('Stock transfer not found', 404);
-        } catch (\RuntimeException $e) {
-            return ApiResponse::error($e->getMessage(), 422);
-        } catch (\Exception $e) {
-            report($e);
-            return ApiResponse::serverError('Something went wrong, please try again');
         }
+        if ($e instanceof \RuntimeException) {
+            return ApiResponse::error($e->getMessage(), 422);
+        }
+
+        report($e);
+        return ApiResponse::serverError('Something went wrong, please try again');
     }
 }

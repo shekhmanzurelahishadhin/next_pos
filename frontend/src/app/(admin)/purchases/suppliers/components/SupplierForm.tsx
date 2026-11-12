@@ -49,29 +49,28 @@ export function SupplierForm({ status, openingBalanceType, supplier, mode, savin
     }
   });
 
-  // Handle backend errors
+  // show the errors the server sent under their fields
   useEffect(() => {
-    if (backendErrors) {
-      clearErrors();
-      Object.entries(backendErrors).forEach(([field, message]) => {
-        setError(field as keyof SupplierFormData, {
-          type: 'server',
-          message: Array.isArray(message) ? message[0] : message
-        });
-      });
+    if (!backendErrors) {
+      return;
+    }
+    clearErrors();
+    for (const field in backendErrors) {
+      setError(field as keyof SupplierFormData, { type: 'server', message: backendErrors[field] });
     }
   }, [backendErrors, setError, clearErrors]);
 
+  // edit: fill the form from the supplier, create: start empty
   useEffect(() => {
     if (mode === 'edit' && supplier) {
       reset({
-        name: supplier?.name ?? '',
-        email: supplier?.email ?? '',
-        phone: supplier?.phone ?? '',
-        address: supplier?.address ?? '',
-        status: Number(supplier?.status ?? 1),
-        opening_balance_type: supplier?.opening_balance_type ?? 1,
-        opening_balance: supplier?.opening_balance ?? 0,
+        name: supplier.name || '',
+        email: supplier.email || '',
+        phone: supplier.phone || '',
+        address: supplier.address || '',
+        status: Number(supplier.status ?? 1),
+        opening_balance_type: supplier.opening_balance_type ?? 1,
+        opening_balance: supplier.opening_balance ?? 0,
       });
     } else {
       reset({

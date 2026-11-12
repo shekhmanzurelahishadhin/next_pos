@@ -164,6 +164,24 @@ export interface CustomerDueReport {
   labels: Record<string, string> | [];
 }
 
+export interface CustomerLedgerRow {
+  id: number;
+  date: string;
+  type: "Sale" | "Return" | "Refund" | "Receipt";
+  head: string;
+  debit: number;
+  credit: number;
+  balance: number;
+}
+
+export interface CustomerLedgerReport {
+  rows: CustomerLedgerRow[];
+  opening: number;
+  customer: { id: number; name: string; code: string | null; phone: string | null; address: string | null };
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
 export interface ReportCustomer {
   id: number;
   name: string;
@@ -215,6 +233,11 @@ class ReportService {
 
   async customerDue(filters: Record<string, string>): Promise<CustomerDueReport> {
     const res = await api.get("/reports/sales/customer-due", { params: filters });
+    return res.data.data;
+  }
+
+  async customerLedger(filters: Record<string, string>): Promise<CustomerLedgerReport> {
+    const res = await api.get("/reports/sales/customer-ledger", { params: filters });
     return res.data.data;
   }
 

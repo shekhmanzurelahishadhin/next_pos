@@ -9,6 +9,7 @@ use App\Http\Requests\inventory\InventoryAuditRequest;
 use App\Models\inventory\AuditName;
 use App\Models\inventory\InventoryAudit;
 use App\Services\inventory\InventoryAuditService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 
 // Audit Name Setup + Inventory Audit entry / manage
@@ -28,26 +29,46 @@ class InventoryAuditController extends Controller
         $this->middleware('permission:inventory-audit.delete')->only('destroy');
     }
 
+    // ---------- Audit Name Setup ----------
+
     public function auditNames(Request $request)
     {
         $rows = $this->service->getAuditNames($request->only('audit_name', 'status'), $request->get('per_page'));
+
         return ApiResponse::success(['data' => $rows->items(), 'total' => $rows->total()], 'Audit names retrieve successfully');
     }
 
     public function storeAuditName(AuditNameRequest $request)
     {
-        return $this->run(fn() => $this->service->saveAuditName($request->validated()), 'Audit name saved successfully', 201);
+        try {
+            $auditName = $this->service->saveAuditName($request->validated());
+            return ApiResponse::success($auditName, 'Audit name saved successfully', 201);
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function updateAuditName(AuditNameRequest $request, AuditName $auditName)
     {
-        return $this->run(fn() => $this->service->saveAuditName($request->validated(), $auditName), 'Audit name updated successfully');
+        try {
+            $auditName = $this->service->saveAuditName($request->validated(), $auditName);
+            return ApiResponse::success($auditName, 'Audit name updated successfully');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function destroyAuditName(AuditName $auditName)
     {
-        return $this->run(fn() => $this->service->deleteAuditName($auditName), 'Audit name deleted successfully');
+        try {
+            $this->service->deleteAuditName($auditName);
+            return ApiResponse::success(null, 'Audit name deleted successfully');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
+
+    // ---------- Audit Entry ----------
 
     public function activeAuditNames()
     {
@@ -57,57 +78,83 @@ class InventoryAuditController extends Controller
     public function scan(Request $request)
     {
         $request->validate(['barcode' => ['required', 'string'], 'store_id' => ['required', 'integer']]);
-        return $this->run(fn() => $this->service->scanBarcode(trim($request->barcode), $request->integer('store_id')), 'Product found');
+
+        try {
+            $line = $this->service->scanBarcode(trim($request->barcode), $request->integer('store_id'));
+            return ApiResponse::success($line, 'Product found');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function locationStock(Request $request)
     {
         $request->validate(['store_id' => ['required', 'integer'], 'location_id' => ['required', 'integer']]);
-        return ApiResponse::success($this->service->locationStock($request->integer('store_id'), $request->integer('location_id')), 'Location stock');
+
+        $lines = $this->service->locationStock($request->integer('store_id'), $request->integer('location_id'));
+        return ApiResponse::success($lines, 'Location stock');
     }
 
     // Inventory Audit Manage: one row per audit
     public function index(Request $request)
     {
-        $rows = $this->service->getAuditRows(
-            $request->only('entry_no', 'audit_name_id', 'store_id', 'location_name', 'created_by_name'),
-            $request->get('per_page')
-        );
+        $filters = $request->only('entry_no', 'audit_name_id', 'store_id', 'location_name', 'created_by_name');
+        $rows = $this->service->getAuditRows($filters, $request->get('per_page'));
+
         return ApiResponse::success(['data' => $rows->items(), 'total' => $rows->total()], 'Inventory audits retrieve successfully');
     }
 
     public function store(InventoryAuditRequest $request)
     {
-        return $this->run(fn() => ['id' => $this->service->createAudit($request->validated())->id], 'Inventory audit saved successfully', 201);
+        try {
+            $audit = $this->service->createAudit($request->validated());
+            return ApiResponse::success(['id' => $audit->id], 'Inventory audit saved successfully', 201);
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function show(int $id)
     {
-        return $this->run(fn() => $this->service->getAudit($id), 'Inventory audit retrieve successfully');
+        try {
+            return ApiResponse::success($this->service->getAudit($id), 'Inventory audit retrieve successfully');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function update(InventoryAuditRequest $request, InventoryAudit $inventoryAudit)
     {
-        return $this->run(fn() => ['id' => $this->service->updateAudit($inventoryAudit, $request->validated())->id], 'Inventory audit updated successfully');
+        try {
+            $audit = $this->service->updateAudit($inventoryAudit, $request->validated());
+            return ApiResponse::success(['id' => $audit->id], 'Inventory audit updated successfully');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function destroy(InventoryAudit $inventoryAudit)
     {
-        return $this->run(fn() => $this->service->deleteAudit($inventoryAudit), 'Inventory audit deleted successfully');
+        try {
+            $this->service->deleteAudit($inventoryAudit);
+            return ApiResponse::success(null, 'Inventory audit deleted successfully');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
-    // business rule errors go back as 422 with the message
-    private function run(callable $action, string $message, int $code = 200)
+    // Not found goes back as 404, a business rule error as 422 with its message,
+    // any other error is logged and a general message is sent
+    private function errorResponse(\Exception $e)
     {
-        try {
-            return ApiResponse::success($action(), $message, $code);
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        if ($e instanceof ModelNotFoundException) {
             return ApiResponse::error('Inventory audit not found', 404);
-        } catch (\RuntimeException $e) {
-            return ApiResponse::error($e->getMessage(), 422);
-        } catch (\Exception $e) {
-            report($e);
-            return ApiResponse::serverError('Something went wrong, please try again');
         }
+        if ($e instanceof \RuntimeException) {
+            return ApiResponse::error($e->getMessage(), 422);
+        }
+
+        report($e);
+        return ApiResponse::serverError('Something went wrong, please try again');
     }
 }

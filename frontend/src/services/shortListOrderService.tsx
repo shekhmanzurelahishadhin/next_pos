@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { removeEmpty } from "@/lib/options";
 import { ProductHit } from "@/services/purchaseService";
 
 // One line of the "Added List" grid
@@ -29,9 +30,6 @@ export interface ShortListRow {
 
 const BASE = "/inventory/short-list-orders";
 
-const clean = (filters: Record<string, string | number>) =>
-  Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "" && v !== undefined && v !== null));
-
 class ShortListOrderService {
   async searchProducts(term: string, storeId?: number | null): Promise<ProductHit[]> {
     const res = await api.get(`${BASE}/search-products`, { params: { term, store_id: storeId } });
@@ -48,7 +46,7 @@ class ShortListOrderService {
   }
 
   async getRows(filters: Record<string, string | number> = {}) {
-    const res = await api.get(BASE, { params: clean(filters) });
+    const res = await api.get(BASE, { params: removeEmpty(filters) });
     return res.data.data as { data: ShortListRow[]; total: number };
   }
 

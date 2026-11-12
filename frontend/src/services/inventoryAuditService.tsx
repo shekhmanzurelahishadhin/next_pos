@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { removeEmpty } from "@/lib/options";
 
 export interface AuditName {
   id: number;
@@ -55,16 +56,13 @@ export interface InventoryAuditRow {
   mismatch: string;
 }
 
-const clean = (filters: Record<string, string | number>) =>
-  Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "" && v !== undefined && v !== null));
-
 const NAMES = "/inventory/audit-names";
 const BASE = "/inventory/inventory-audits";
 
 class InventoryAuditService {
   // Audit Name Setup
   async getAuditNames(filters: Record<string, string | number> = {}) {
-    const res = await api.get(NAMES, { params: clean(filters) });
+    const res = await api.get(NAMES, { params: removeEmpty(filters) });
     return res.data.data as { data: AuditName[]; total: number };
   }
 
@@ -104,7 +102,7 @@ class InventoryAuditService {
   }
 
   async getAudits(filters: Record<string, string | number> = {}) {
-    const res = await api.get(BASE, { params: clean(filters) });
+    const res = await api.get(BASE, { params: removeEmpty(filters) });
     return res.data.data as { data: InventoryAuditRow[]; total: number };
   }
 

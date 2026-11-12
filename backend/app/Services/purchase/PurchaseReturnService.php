@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 // Purchase return, same flow as parts_bazar receivedPurchase/return:
-// pick an approved PO, enter return qty per item -> stock out, return amount lowers the supplier due
+// pick an approved PO, enter return qty per item -> stock out, the return amount lowers the supplier due
 // (when the supplier gives the money back it is a refund and the due does not change)
 class PurchaseReturnService
 {
@@ -25,39 +25,69 @@ class PurchaseReturnService
     // "Purchase Return" page: items of approved POs, one row per item
     public function getReturnableRows(array $filters = [], $perPage = 10)
     {
-        $returned = DB::table('purchase_return_details')->whereNull('deleted_at')
-            ->select('purchase_detail_id', DB::raw('SUM(return_qty) as returned_qty'))
+        // qty already returned of each purchased item
+        $returnedByItem = DB::table('purchase_return_details')
+            ->whereNull('deleted_at')
+            ->select('purchase_detail_id')
+            ->selectRaw('SUM(return_qty) as returned_qty')
             ->groupBy('purchase_detail_id');
 
-        $query = DB::table('purchase_details as d')
-            ->join('purchases as p', 'p.id', '=', 'd.purchase_id')
-            ->join('products as pr', 'pr.id', '=', 'd.product_id')
-            ->leftJoin('suppliers as s', 's.id', '=', 'p.supplier_id')
-            ->leftJoin('stores as st', 'st.id', '=', 'p.store_id')
-            ->leftJoin('locations as l', 'l.id', '=', 'd.location_id')
-            ->leftJoinSub($returned, 'r', 'r.purchase_detail_id', '=', 'd.id')
-            ->whereNull('d.deleted_at')
-            ->whereNull('p.deleted_at')
-            ->where('p.status', Purchase::APPROVED)
+        $query = DB::table('purchase_details')
+            ->join('purchases', 'purchases.id', '=', 'purchase_details.purchase_id')
+            ->join('products', 'products.id', '=', 'purchase_details.product_id')
+            ->leftJoin('suppliers', 'suppliers.id', '=', 'purchases.supplier_id')
+            ->leftJoin('stores', 'stores.id', '=', 'purchases.store_id')
+            ->leftJoin('locations', 'locations.id', '=', 'purchase_details.location_id')
+            ->leftJoinSub($returnedByItem, 'returned', 'returned.purchase_detail_id', '=', 'purchase_details.id')
+            ->whereNull('purchase_details.deleted_at')
+            ->whereNull('purchases.deleted_at')
+            ->where('purchases.status', Purchase::APPROVED)
             ->select(
-                'd.id', 'd.purchase_id', 'd.qty', 'd.unit',
-                'p.po_no', 'p.purchase_date', 'p.supplier_bill_no',
-                'pr.name as product_name', 'pr.part_number',
-                's.name as supplier_name', 'st.name as store_name', 'l.name as location_name',
-                DB::raw('COALESCE(r.returned_qty, 0) as returned_qty')
-            );
+                'purchase_details.id',
+                'purchase_details.purchase_id',
+                'purchase_details.qty',
+                'purchase_details.unit',
+                'purchases.po_no',
+                'purchases.purchase_date',
+                'purchases.supplier_bill_no',
+                'products.name as product_name',
+                'products.part_number',
+                'suppliers.name as supplier_name',
+                'stores.name as store_name',
+                'locations.name as location_name'
+            )
+            ->selectRaw('COALESCE(returned.returned_qty, 0) as returned_qty');
 
-        $this->onlyOwnCompany($query);
+        // a company user can only see the purchases of own company
+        $ownCompanyId = $this->ownCompanyId();
+        if ($ownCompanyId) {
+            $query->where('purchases.company_id', $ownCompanyId);
+        }
 
-        $query
-            ->when($filters['po_no'] ?? null, fn($q, $v) => $q->where('p.po_no', 'like', "%{$v}%"))
-            ->when($filters['supplier_name'] ?? null, fn($q, $v) => $q->where('s.name', 'like', "%{$v}%"))
-            ->when($filters['store_id'] ?? null, fn($q, $v) => $q->where('p.store_id', $v))
-            ->when($filters['location_name'] ?? null, fn($q, $v) => $q->where('l.name', 'like', "%{$v}%"))
-            ->when($filters['product_name'] ?? null, fn($q, $v) => $q->where('pr.name', 'like', "%{$v}%"))
-            ->when($filters['part_number'] ?? null, fn($q, $v) => $q->where('pr.part_number', 'like', "%{$v}%"));
+        if (!empty($filters['po_no'])) {
+            $query->where('purchases.po_no', 'like', '%' . $filters['po_no'] . '%');
+        }
+        if (!empty($filters['supplier_name'])) {
+            $query->where('suppliers.name', 'like', '%' . $filters['supplier_name'] . '%');
+        }
+        if (!empty($filters['store_id'])) {
+            $query->where('purchases.store_id', $filters['store_id']);
+        }
+        if (!empty($filters['location_name'])) {
+            $query->where('locations.name', 'like', '%' . $filters['location_name'] . '%');
+        }
+        if (!empty($filters['product_name'])) {
+            $query->where('products.name', 'like', '%' . $filters['product_name'] . '%');
+        }
+        if (!empty($filters['part_number'])) {
+            $query->where('products.part_number', 'like', '%' . $filters['part_number'] . '%');
+        }
 
-        return $query->orderByDesc('p.id')->orderBy('d.id')->paginate($perPage ?: 10);
+        if (!$perPage) {
+            $perPage = 10;
+        }
+
+        return $query->orderByDesc('purchases.id')->orderBy('purchase_details.id')->paginate($perPage);
     }
 
     // Return form of one PO: every item with received, already returned and in stock qty
@@ -66,28 +96,30 @@ class PurchaseReturnService
         $this->mustBeApproved($purchase);
         $purchase->load('details.product:id,name,part_number', 'details.location:id,name', 'supplier:id,name', 'store:id,name');
 
-        $items = $purchase->details->map(function ($detail) use ($purchase) {
+        $items = [];
+        foreach ($purchase->details as $detail) {
             $barcode = $this->barcodeOf($purchase, $detail->id);
-            return [
+
+            $items[] = [
                 'purchase_detail_id' => $detail->id,
-                'product_name'       => $detail->product?->name,
-                'part_number'        => $detail->product?->part_number,
-                'location_name'      => $detail->location?->name,
+                'product_name'       => $detail->product ? $detail->product->name : null,
+                'part_number'        => $detail->product ? $detail->product->part_number : null,
+                'location_name'      => $detail->location ? $detail->location->name : null,
                 'barcode'            => $barcode,
                 'received_qty'       => (float) $detail->qty,
                 'returned_qty'       => $this->returnedQty($detail->id),
-                'closing_stock'      => $this->barcodeStock($barcode),
+                'closing_stock'      => InventoryBarcode::closingStock($barcode),
                 'unit_price'         => $this->unitCost($detail),
             ];
-        });
+        }
 
         return [
             'purchase_id'   => $purchase->id,
             'po_no'         => $purchase->po_no,
             'purchase_date' => $purchase->purchase_date->toDateString(),
             'supplier_id'   => $purchase->supplier_id,
-            'supplier_name' => $purchase->supplier?->name,
-            'store_name'    => $purchase->store?->name,
+            'supplier_name' => $purchase->supplier ? $purchase->supplier->name : null,
+            'store_name'    => $purchase->store ? $purchase->store->name : null,
             'items'         => $items,
         ];
     }
@@ -109,12 +141,19 @@ class PurchaseReturnService
             throw new \RuntimeException('Duplicate submission detected. Please wait a few seconds.');
         }
 
-        $lines = collect($data['items'])->filter(fn($item) => $item['return_qty'] > 0);
-        if ($lines->isEmpty()) {
+        // only the items with a return qty
+        $lines = [];
+        foreach ($data['items'] as $item) {
+            if ($item['return_qty'] > 0) {
+                $lines[] = $item;
+            }
+        }
+        if (count($lines) == 0) {
             throw new \RuntimeException('Please enter return qty!');
         }
 
-        return DB::transaction(function () use ($purchase, $data, $lines) {
+        DB::beginTransaction();
+        try {
             $purchase->load('details');
             $isRefund = !empty($data['is_refund']);
 
@@ -138,86 +177,135 @@ class PurchaseReturnService
                     throw new \RuntimeException('Item is not in this purchase.');
                 }
 
-                $qty = (float) $line['return_qty'];
-                $barcode = $this->barcodeOf($purchase, $detail->id);
-                $remaining = (float) $detail->qty - $this->returnedQty($detail->id);
-                if ($qty > $remaining || $qty > $this->barcodeStock($barcode)) {
-                    throw new \RuntimeException('Return Qty cannot be greater than Closing Stock or Remaining Qty.');
-                }
-
-                $unitPrice = $this->unitCost($detail);
-                $lineTotal = round($unitPrice * $qty, 2);
-                $total += $lineTotal;
-
-                $returnDetail = PurchaseReturnDetail::create([
-                    'purchase_return_id' => $return->id,
-                    'purchase_detail_id' => $detail->id,
-                    'product_id'         => $detail->product_id,
-                    'location_id'        => $detail->location_id,
-                    'barcode'            => $barcode,
-                    'return_qty'         => $qty,
-                    'unit_price'         => $unitPrice,
-                    'total_price'        => $lineTotal,
-                ]);
-
-                Inventory::create([
-                    'company_id'       => $purchase->company_id,
-                    'store_id'         => $purchase->store_id,
-                    'location_id'      => $detail->location_id,
-                    'product_id'       => $detail->product_id,
-                    'stock_out'        => $qty,
-                    'purchase_price'   => $unitPrice,
-                    'transaction_date' => $data['return_date'],
-                    'entry_point'      => self::ENTRY_POINT,
-                    'entry_no'         => $return->return_no,
-                    'reference_id'     => $returnDetail->id,
-                    'barcode'          => $barcode,
-                    'created_by'       => Auth::id(),
-                ]);
-                InventoryBarcode::addStockOut($barcode, $qty);
+                $total += $this->returnItem($purchase, $return, $detail, (float) $line['return_qty'], $data['return_date']);
             }
 
+            $refundAmount = 0;
+            if ($isRefund) {
+                $refundAmount = $total;
+            }
             $return->update([
                 'total_amount'  => $total,
-                'refund_amount' => $isRefund ? $total : 0,
+                'refund_amount' => $refundAmount,
             ]);
 
+            DB::commit();
             return $return;
-        });
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    // one returned item: save the line and take the qty out of stock; returns the line total
+    private function returnItem(Purchase $purchase, PurchaseReturn $return, $detail, float $qty, string $returnDate): float
+    {
+        $barcode = $this->barcodeOf($purchase, $detail->id);
+
+        // can not return more than is left of the item, or more than is in stock
+        $remaining = (float) $detail->qty - $this->returnedQty($detail->id);
+        if ($qty > $remaining || $qty > InventoryBarcode::closingStock($barcode)) {
+            throw new \RuntimeException('Return Qty cannot be greater than Closing Stock or Remaining Qty.');
+        }
+
+        $unitPrice = $this->unitCost($detail);
+        $lineTotal = round($unitPrice * $qty, 2);
+
+        $returnDetail = PurchaseReturnDetail::create([
+            'purchase_return_id' => $return->id,
+            'purchase_detail_id' => $detail->id,
+            'product_id'         => $detail->product_id,
+            'location_id'        => $detail->location_id,
+            'barcode'            => $barcode,
+            'return_qty'         => $qty,
+            'unit_price'         => $unitPrice,
+            'total_price'        => $lineTotal,
+        ]);
+
+        Inventory::create([
+            'company_id'       => $purchase->company_id,
+            'store_id'         => $purchase->store_id,
+            'location_id'      => $detail->location_id,
+            'product_id'       => $detail->product_id,
+            'stock_out'        => $qty,
+            'purchase_price'   => $unitPrice,
+            'transaction_date' => $returnDate,
+            'entry_point'      => self::ENTRY_POINT,
+            'entry_no'         => $return->return_no,
+            'reference_id'     => $returnDetail->id,
+            'barcode'          => $barcode,
+            'created_by'       => Auth::id(),
+        ]);
+        InventoryBarcode::addStockOut($barcode, $qty);
+
+        return $lineTotal;
     }
 
     // "Purchase Return Manage": one row per returned item
     public function getReturnRows(array $filters = [], $perPage = 10)
     {
-        $query = DB::table('purchase_return_details as rd')
-            ->join('purchase_returns as r', 'r.id', '=', 'rd.purchase_return_id')
-            ->join('purchases as p', 'p.id', '=', 'r.purchase_id')
-            ->join('products as pr', 'pr.id', '=', 'rd.product_id')
-            ->leftJoin('suppliers as s', 's.id', '=', 'r.supplier_id')
-            ->leftJoin('stores as st', 'st.id', '=', 'r.store_id')
-            ->leftJoin('locations as l', 'l.id', '=', 'rd.location_id')
-            ->whereNull('rd.deleted_at')
-            ->whereNull('r.deleted_at')
+        $query = DB::table('purchase_return_details')
+            ->join('purchase_returns', 'purchase_returns.id', '=', 'purchase_return_details.purchase_return_id')
+            ->join('purchases', 'purchases.id', '=', 'purchase_returns.purchase_id')
+            ->join('products', 'products.id', '=', 'purchase_return_details.product_id')
+            ->leftJoin('suppliers', 'suppliers.id', '=', 'purchase_returns.supplier_id')
+            ->leftJoin('stores', 'stores.id', '=', 'purchase_returns.store_id')
+            ->leftJoin('locations', 'locations.id', '=', 'purchase_return_details.location_id')
+            ->whereNull('purchase_return_details.deleted_at')
+            ->whereNull('purchase_returns.deleted_at')
             ->select(
-                'rd.id', 'rd.purchase_return_id', 'rd.return_qty', 'rd.unit_price', 'rd.total_price',
-                'r.return_no', 'r.return_date', 'r.store_id', 'r.total_amount', 'r.is_refund', 'r.refund_amount',
-                'p.po_no', 'p.supplier_bill_no',
-                'pr.name as product_name', 'pr.part_number',
-                's.name as supplier_name', 'st.name as store_name', 'l.name as location_name'
+                'purchase_return_details.id',
+                'purchase_return_details.purchase_return_id',
+                'purchase_return_details.return_qty',
+                'purchase_return_details.unit_price',
+                'purchase_return_details.total_price',
+                'purchase_returns.return_no',
+                'purchase_returns.return_date',
+                'purchase_returns.store_id',
+                'purchase_returns.total_amount',
+                'purchase_returns.is_refund',
+                'purchase_returns.refund_amount',
+                'purchases.po_no',
+                'purchases.supplier_bill_no',
+                'products.name as product_name',
+                'products.part_number',
+                'suppliers.name as supplier_name',
+                'stores.name as store_name',
+                'locations.name as location_name'
             );
 
-        $this->onlyOwnCompany($query, 'r');
+        $ownCompanyId = $this->ownCompanyId();
+        if ($ownCompanyId) {
+            $query->where('purchase_returns.company_id', $ownCompanyId);
+        }
 
-        $query
-            ->when($filters['return_no'] ?? null, fn($q, $v) => $q->where('r.return_no', 'like', "%{$v}%"))
-            ->when($filters['po_no'] ?? null, fn($q, $v) => $q->where('p.po_no', 'like', "%{$v}%"))
-            ->when($filters['supplier_name'] ?? null, fn($q, $v) => $q->where('s.name', 'like', "%{$v}%"))
-            ->when($filters['store_id'] ?? null, fn($q, $v) => $q->where('r.store_id', $v))
-            ->when($filters['location_name'] ?? null, fn($q, $v) => $q->where('l.name', 'like', "%{$v}%"))
-            ->when($filters['product_name'] ?? null, fn($q, $v) => $q->where('pr.name', 'like', "%{$v}%"))
-            ->when($filters['part_number'] ?? null, fn($q, $v) => $q->where('pr.part_number', 'like', "%{$v}%"));
+        if (!empty($filters['return_no'])) {
+            $query->where('purchase_returns.return_no', 'like', '%' . $filters['return_no'] . '%');
+        }
+        if (!empty($filters['po_no'])) {
+            $query->where('purchases.po_no', 'like', '%' . $filters['po_no'] . '%');
+        }
+        if (!empty($filters['supplier_name'])) {
+            $query->where('suppliers.name', 'like', '%' . $filters['supplier_name'] . '%');
+        }
+        if (!empty($filters['store_id'])) {
+            $query->where('purchase_returns.store_id', $filters['store_id']);
+        }
+        if (!empty($filters['location_name'])) {
+            $query->where('locations.name', 'like', '%' . $filters['location_name'] . '%');
+        }
+        if (!empty($filters['product_name'])) {
+            $query->where('products.name', 'like', '%' . $filters['product_name'] . '%');
+        }
+        if (!empty($filters['part_number'])) {
+            $query->where('products.part_number', 'like', '%' . $filters['part_number'] . '%');
+        }
 
-        return $query->orderByDesc('r.id')->orderBy('rd.id')->paginate($perPage ?: 10);
+        if (!$perPage) {
+            $perPage = 10;
+        }
+
+        return $query->orderByDesc('purchase_returns.id')->orderBy('purchase_return_details.id')->paginate($perPage);
     }
 
     // Return chalan
@@ -234,18 +322,26 @@ class PurchaseReturnService
         ])->findOrFail($id);
     }
 
-    // parts_bazar purchaseReturn/delete: stock goes back in, the return is removed
+    // parts_bazar purchaseReturn/delete: the stock goes back in, the return is removed
     public function deleteReturn(PurchaseReturn $return): void
     {
-        DB::transaction(function () use ($return) {
+        DB::beginTransaction();
+        try {
             foreach ($return->details as $detail) {
+                // a minus stock out puts the qty back on the barcode
                 InventoryBarcode::addStockOut($detail->barcode, -$detail->return_qty);
             }
+
             Inventory::where('entry_point', self::ENTRY_POINT)->where('entry_no', $return->return_no)->delete();
             $return->details()->update(['deleted_at' => now()]);
             $return->update(['deleted_by' => Auth::id()]);
             $return->delete();
-        });
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     private function mustBeApproved(Purchase $purchase): void
@@ -258,13 +354,10 @@ class PurchaseReturnService
     // barcode given to this item when the PO was approved
     private function barcodeOf(Purchase $purchase, int $detailId): ?string
     {
-        return InventoryBarcode::where('entry_point', 'purchase')->where('entry_no', $purchase->po_no)
-            ->where('reference_id', $detailId)->value('barcode');
-    }
-
-    private function barcodeStock(?string $barcode): float
-    {
-        return InventoryBarcode::closingStock($barcode);
+        return InventoryBarcode::where('entry_point', 'purchase')
+            ->where('entry_no', $purchase->po_no)
+            ->where('reference_id', $detailId)
+            ->value('barcode');
     }
 
     private function returnedQty(int $detailId): float
@@ -275,13 +368,21 @@ class PurchaseReturnService
     // parts_bazar priceOfThsPO_Product: total purchase price / qty (weight cost included)
     private function unitCost($detail): float
     {
-        return $detail->qty > 0 ? round($detail->total_purchase_price / $detail->qty, 2) : 0;
+        if ($detail->qty <= 0) {
+            return 0;
+        }
+
+        return round($detail->total_purchase_price / $detail->qty, 2);
     }
 
-    private function onlyOwnCompany($query, string $alias = 'p'): void
+    // company of the logged in user, null for a Super Admin
+    private function ownCompanyId()
     {
-        if (Auth::check() && !Auth::user()->hasRole('Super Admin') && !empty(Auth::user()->company_id)) {
-            $query->where("{$alias}.company_id", Auth::user()->company_id);
+        $user = Auth::user();
+        if (!$user || $user->hasRole('Super Admin') || empty($user->company_id)) {
+            return null;
         }
+
+        return $user->company_id;
     }
 }

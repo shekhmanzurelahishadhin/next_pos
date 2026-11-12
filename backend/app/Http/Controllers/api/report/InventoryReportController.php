@@ -55,7 +55,9 @@ class InventoryReportController extends Controller
 
     public function outOfStock(Request $request)
     {
-        $filters = $request->validate(['company_id' => 'nullable|integer', ...$this->productFilterRules()]);
+        $rules = $this->productFilterRules();
+        $rules['company_id'] = 'nullable|integer';
+        $filters = $request->validate($rules);
         return ApiResponse::success([
             'rows' => $this->service->outOfStock($filters),
             'company' => $this->service->company($filters['company_id'] ?? null),

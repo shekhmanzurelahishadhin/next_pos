@@ -12,15 +12,17 @@ class ShortListOrderService
     // "Create PR": save every grid line under one new max_sl_no, like parts_bazar actionSave
     public function createList(array $items): int
     {
-        return DB::transaction(function () use ($items) {
-            // lock so two users never get the same number
+        DB::beginTransaction();
+        try {
+            // lock the table, so two users never get the same number
             $maxSlNo = (int) ShortListOrder::lockForUpdate()->max('max_sl_no') + 1;
-            $companies = Store::whereIn('id', array_column($items, 'store_id'))->pluck('company_id', 'id');
 
             foreach ($items as $item) {
+                $store = Store::find($item['store_id']);
+
                 ShortListOrder::create([
                     'max_sl_no'      => $maxSlNo,
-                    'company_id'     => $companies[$item['store_id']] ?? null,
+                    'company_id'     => $store ? $store->company_id : null,
                     'store_id'       => $item['store_id'],
                     'product_id'     => $item['product_id'],
                     'code'           => $item['code'] ?? null,
@@ -30,30 +32,54 @@ class ShortListOrderService
                     'created_by'     => Auth::id(),
                 ]);
             }
+
+            DB::commit();
             return $maxSlNo;
-        });
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     // Manage Short List Order: one row per product line
     public function getRows(array $filters = [], $perPage = 10)
     {
-        $query = DB::table('short_list_orders as s')
-            ->join('products as pr', 'pr.id', '=', 's.product_id')
-            ->leftJoin('stores as st', 'st.id', '=', 's.store_id')
+        $query = DB::table('short_list_orders')
+            ->join('products', 'products.id', '=', 'short_list_orders.product_id')
+            ->leftJoin('stores', 'stores.id', '=', 'short_list_orders.store_id')
             ->select(
-                's.id', 's.max_sl_no', 's.store_id', 's.code', 's.stock_qty', 's.purchase_price', 's.order_qty', 's.created_at',
-                'pr.name as product_name', 'st.name as store_name'
+                'short_list_orders.id',
+                'short_list_orders.max_sl_no',
+                'short_list_orders.store_id',
+                'short_list_orders.code',
+                'short_list_orders.stock_qty',
+                'short_list_orders.purchase_price',
+                'short_list_orders.order_qty',
+                'short_list_orders.created_at',
+                'products.name as product_name',
+                'stores.name as store_name'
             );
 
-        $this->onlyOwnCompany($query, 's');
+        $this->onlyOwnCompany($query);
 
-        $query
-            ->when($filters['max_sl_no'] ?? null, fn($q, $v) => $q->where('s.max_sl_no', $v))
-            ->when($filters['store_id'] ?? null, fn($q, $v) => $q->where('s.store_id', $v))
-            ->when($filters['product_name'] ?? null, fn($q, $v) => $q->where('pr.name', 'like', "%{$v}%"))
-            ->when($filters['code'] ?? null, fn($q, $v) => $q->where('s.code', 'like', "%{$v}%"));
+        if (!empty($filters['max_sl_no'])) {
+            $query->where('short_list_orders.max_sl_no', $filters['max_sl_no']);
+        }
+        if (!empty($filters['store_id'])) {
+            $query->where('short_list_orders.store_id', $filters['store_id']);
+        }
+        if (!empty($filters['product_name'])) {
+            $query->where('products.name', 'like', '%' . $filters['product_name'] . '%');
+        }
+        if (!empty($filters['code'])) {
+            $query->where('short_list_orders.code', 'like', '%' . $filters['code'] . '%');
+        }
 
-        return $query->orderByDesc('s.max_sl_no')->orderBy('s.id')->paginate($perPage ?: 10);
+        if (!$perPage) {
+            $perPage = 10;
+        }
+
+        return $query->orderByDesc('short_list_orders.max_sl_no')->orderBy('short_list_orders.id')->paginate($perPage);
     }
 
     // Short list report of one max_sl_no
@@ -61,17 +87,20 @@ class ShortListOrderService
     {
         $query = ShortListOrder::with(['store:id,name', 'product:id,name,part_number', 'company:id,name,address,phone,email', 'createdBy:id,name'])
             ->where('max_sl_no', $maxSlNo);
-        $this->onlyOwnCompany($query, 'short_list_orders');
-        $lines = $query->orderBy('id')->get();
+        $this->onlyOwnCompany($query);
 
+        $lines = $query->orderBy('id')->get();
         if ($lines->isEmpty()) {
             throw new \RuntimeException('Short list not found');
         }
+
+        $first = $lines->first();
+
         return [
             'max_sl_no'  => $maxSlNo,
-            'created_at' => $lines->first()->created_at,
-            'company'    => $lines->first()->company,
-            'created_by' => $lines->first()->createdBy?->name,
+            'created_at' => $first->created_at,
+            'company'    => $first->company,
+            'created_by' => $first->createdBy ? $first->createdBy->name : null,
             'lines'      => $lines,
         ];
     }
@@ -80,16 +109,20 @@ class ShortListOrderService
     public function deleteList(int $maxSlNo): void
     {
         $query = ShortListOrder::where('max_sl_no', $maxSlNo);
-        $this->onlyOwnCompany($query, 'short_list_orders');
-        if ($query->delete() === 0) {
+        $this->onlyOwnCompany($query);
+
+        $deletedCount = $query->delete();
+        if ($deletedCount == 0) {
             throw new \RuntimeException('Short list not found');
         }
     }
 
-    private function onlyOwnCompany($query, string $alias): void
+    // a company user can only see the lists of own company
+    private function onlyOwnCompany($query): void
     {
-        if (Auth::check() && !Auth::user()->hasRole('Super Admin') && !empty(Auth::user()->company_id)) {
-            $query->where("{$alias}.company_id", Auth::user()->company_id);
+        $user = Auth::user();
+        if ($user && !$user->hasRole('Super Admin') && !empty($user->company_id)) {
+            $query->where('short_list_orders.company_id', $user->company_id);
         }
     }
 }

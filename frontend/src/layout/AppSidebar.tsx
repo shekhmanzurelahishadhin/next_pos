@@ -126,6 +126,7 @@ const navItems: NavItem[] = [
       { group: "Report", name: "Collection Report", path: "/sales/report/collection", requiredPermissions: ["collection-report.view"] },
       { group: "Report", name: "Invoice Wise Collection", path: "/sales/report/invoice-collection", requiredPermissions: ["invoice-wise-collection-report.view"] },
       { group: "Report", name: "Customer Due Report", path: "/sales/report/customer-due", requiredPermissions: ["customer-due-report.view"] },
+      { group: "Report", name: "Customer Ledger", path: "/sales/report/customer-ledger", requiredPermissions: ["customer-ledger-report.view"] },
     ],
   },
 ];

@@ -2,7 +2,6 @@
 
 namespace App\Models\purchase;
 
-use App\Models\softConfig\Company;
 use App\Models\softConfig\Lookup;
 use App\Models\User;
 use App\Traits\SetSlugAndAuditing;
@@ -20,8 +19,10 @@ class Supplier extends Model
     {
         return $this->belongsTo(User::class, 'created_by');
     }
+
+    // name of the opening balance type (1 = Debit, 2 = Credit) from the lookups
     public function balanceType()
     {
-        return $this->hasOne(Lookup::class, 'code','opening_balance_type')->where('type','=','transaction_type');
+        return $this->hasOne(Lookup::class, 'code', 'opening_balance_type')->where('type', 'transaction_type');
     }
 }

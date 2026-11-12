@@ -1,16 +1,13 @@
 <?php
 
-
 namespace App\Services\purchase;
 
-
 use App\Models\purchase\Supplier;
-use App\Models\purchase\SupplierLedger;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class SupplierService
 {
+    // Supplier list with the search filters; paginated when perPage is given
     public function getSuppliers(array $filters = [], $perPage = null)
     {
         $query = Supplier::query()->select(
@@ -28,85 +25,103 @@ class SupplierService
             'updated_at',
             'deleted_at'
         );
-        // Handle status / trash logic
-        if (($filters['status'] ?? '') === 'trash') {
+
+        // status "trash" shows the deleted suppliers, any other status filters by it
+        $status = $filters['status'] ?? '';
+        if ($status === 'trash') {
             $query->onlyTrashed();
-        } elseif (isset($filters['status']) && $filters['status'] !== '') {
-            $query->where('status', $filters['status']);
+        } elseif ($status !== '' && $status !== null) {
+            $query->where('status', $status);
         }
-//        else {
-//            $query->withTrashed();
-//        }
 
-        // Apply filters
-        $query
-            ->when($filters['name'] ?? null, fn($q, $name) => $q->where('name', 'like', "%{$name}%"))
-            ->when($filters['code'] ?? null, fn($q, $code) => $q->where('code', 'like', "%{$code}%"))
-            ->when($filters['address'] ?? null, fn($q, $address) => $q->where('address', 'like', "%{$address}%"))
-            ->when($filters['email'] ?? null, fn($q, $email) => $q->where('email', 'like', "%{$email}%"))
-            ->when($filters['phone'] ?? null, fn($q, $phone) => $q->where('phone', 'like', "%{$phone}%"))
-            ->when($filters['opening_balance'] ?? null, fn($q, $opening_balance) => $q->where('opening_balance', 'like', "%{$opening_balance}%"))
-            ->when($filters['opening_balance_type'] ?? null, fn($q, $opening_balance_type) => $q->where('opening_balance_type',  $opening_balance_type))
-            ->when($filters['created_by'] ?? null, fn($q, $createdBy) => $q->whereHas('createdBy', fn($sub) => $sub->where('name', 'like', "%{$createdBy}%")))
-            ->when($filters['created_at'] ?? null, fn($q, $createdAt) => $q->whereDate('created_at', date('Y-m-d', strtotime($createdAt))));
+        if (!empty($filters['name'])) {
+            $query->where('name', 'like', '%' . $filters['name'] . '%');
+        }
+        if (!empty($filters['code'])) {
+            $query->where('code', 'like', '%' . $filters['code'] . '%');
+        }
+        if (!empty($filters['address'])) {
+            $query->where('address', 'like', '%' . $filters['address'] . '%');
+        }
+        if (!empty($filters['email'])) {
+            $query->where('email', 'like', '%' . $filters['email'] . '%');
+        }
+        if (!empty($filters['phone'])) {
+            $query->where('phone', 'like', '%' . $filters['phone'] . '%');
+        }
+        if (!empty($filters['opening_balance'])) {
+            $query->where('opening_balance', 'like', '%' . $filters['opening_balance'] . '%');
+        }
+        if (!empty($filters['opening_balance_type'])) {
+            $query->where('opening_balance_type', $filters['opening_balance_type']);
+        }
+        if (!empty($filters['created_by'])) {
+            // search by the name of the user who made the supplier
+            $createdBy = $filters['created_by'];
+            $query->whereHas('createdBy', function ($user) use ($createdBy) {
+                $user->where('name', 'like', '%' . $createdBy . '%');
+            });
+        }
+        if (!empty($filters['created_at'])) {
+            $query->whereDate('created_at', date('Y-m-d', strtotime($filters['created_at'])));
+        }
 
-        // Eager load common relations
-        $query->with([
-            'createdBy:id,name',
-            'balanceType:code,name'
-        ])->orderByDesc('id');
+        $query->with(['createdBy:id,name', 'balanceType:code,name'])->orderByDesc('id');
 
-        // Return results
-        return $perPage ? $query->paginate($perPage) : $query->get();
+        if ($perPage) {
+            return $query->paginate($perPage);
+        }
+
+        return $query->get();
     }
 
     public function createSupplier(array $data)
     {
-        return DB::transaction(function () use ($data) {
-            // Generate unique supplier code
+        DB::beginTransaction();
+        try {
+            // a new unique supplier code, like SUP0001
             $data['code'] = generateCode('SUP', 'suppliers', 'code');
-
-            // Create supplier
             $supplier = Supplier::create($data);
 
+            DB::commit();
             return $supplier;
-        });
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
-
 
     public function updateSupplier(Supplier $supplier, array $data)
     {
-        return DB::transaction(function () use ($supplier, $data) {
+        $supplier->update($data);
 
-            // Update supplier basic info
-            $supplier->update($data);
-
-            return $supplier->fresh(); // return the updated supplier with relations if needed
-        });
+        return $supplier->fresh();
     }
 
-
-
+    // move to trash
     public function softDeleteSupplier(Supplier $supplier)
     {
         $supplier->delete();
     }
 
+    // take back from trash
     public function restoreSupplier(Supplier $supplier)
     {
         if ($supplier->trashed()) {
             $supplier->restore();
         }
+
         return $supplier;
     }
 
+    // delete for ever; only a supplier in the trash can be deleted
     public function forceDeleteSupplier(Supplier $supplier)
     {
-        if ($supplier->trashed()) {
-            $supplier->forceDelete();
-            return true;
+        if (!$supplier->trashed()) {
+            return false;
         }
-        return false;
-    }
 
+        $supplier->forceDelete();
+        return true;
+    }
 }

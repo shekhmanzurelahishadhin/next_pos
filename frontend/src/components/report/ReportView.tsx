@@ -31,15 +31,24 @@ export const rptTh = "rpt-th sticky -top-px z-10 border border-gray-200 bg-gray-
 export const rptTd = "border border-gray-200 px-2 py-1.5 dark:border-gray-700";
 export const rptTotal = "rpt-total bg-gray-50 font-semibold text-gray-800 dark:bg-white/[0.04] dark:text-white/90";
 
-// rows of one group (an order, a return ...) are next to each other: the first row of a group
-// gets how many rows to merge over (rowSpan), the other rows get nothing
+// Rows of one group (an order, a return ...) are next to each other.
+// The first row of a group gets how many rows its cells merge over (rowSpan);
+// the other rows of the group get nothing, so they skip those cells.
+// Example: groups A, A, B -> { 0: 2, 2: 1 }
 export function groupSpans<T>(rows: T[], groupOf: (row: T) => string | number): Record<number, number> {
   const spans: Record<number, number> = {};
-  let start = 0;
-  rows.forEach((row, i) => {
-    if (i > 0 && groupOf(rows[i - 1]) === groupOf(row)) spans[start]++;
-    else spans[(start = i)] = 1;
-  });
+  let firstRowOfGroup = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const sameGroupAsPrevious = i > 0 && groupOf(rows[i - 1]) === groupOf(rows[i]);
+    if (sameGroupAsPrevious) {
+      spans[firstRowOfGroup] = spans[firstRowOfGroup] + 1;
+    } else {
+      firstRowOfGroup = i;
+      spans[i] = 1;
+    }
+  }
+
   return spans;
 }
 
@@ -54,7 +63,8 @@ interface Props {
 }
 
 // full Tailwind class names, so the build keeps them: as many columns as summary cards on wide screens
-const summaryCols: Record<number, string> = { 3: "lg:grid-cols-3", 4: "lg:grid-cols-4", 5: "lg:grid-cols-5", 6: "lg:grid-cols-6" };
+// 4 cards stay 2 x 2 on tablets, so no cell is left empty
+const summaryCols: Record<number, string> = { 3: "sm:grid-cols-3", 4: "lg:grid-cols-4", 5: "sm:grid-cols-3 lg:grid-cols-5", 6: "sm:grid-cols-3 lg:grid-cols-6" };
 
 const toneClass = {
   success: "text-success-600 dark:text-success-400",
@@ -106,7 +116,7 @@ export default function ReportView({ title, lines, company, fileName, rowCount, 
       </div>
 
       {summary && summary.length > 0 && (
-        <div className={`grid grid-cols-2 gap-px border-b border-gray-100 bg-gray-100 sm:grid-cols-3 ${summaryCols[summary.length] ?? "lg:grid-cols-6"} dark:border-gray-800 dark:bg-gray-800`}>
+        <div className={`grid grid-cols-2 gap-px border-b border-gray-100 bg-gray-100 ${summaryCols[summary.length] ?? "sm:grid-cols-3 lg:grid-cols-6"} dark:border-gray-800 dark:bg-gray-800`}>
           {summary.map((s) => (
             <div key={s.label} className="bg-white px-4 py-2.5 dark:bg-gray-900">
               <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">{s.label}</div>

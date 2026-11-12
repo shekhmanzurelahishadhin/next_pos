@@ -13,17 +13,19 @@ import Autocomplete from "@/components/form/Autocomplete";
 import Button from "@/components/ui/button/Button";
 import { FiPlus, FiTrash } from "@/icons/index";
 import { api } from "@/lib/api";
+import { apiErrorMessage, blurOnWheel, loadOptions, Option, optionLabel, today } from "@/lib/options";
 import { stockTransferService, TransferBarcodeHit, TransferItem } from "@/services/stockTransferService";
 import { StockTransferViewModal } from "../components/StockTransferView";
 
-type Option = { value: string; label: string };
+type StoreOption = Option & { company_id: number | null };
 
 const inputClass =
   "h-9 w-full rounded-md border border-gray-300 bg-transparent px-2.5 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90";
 const readOnlyClass =
   "h-9 w-full truncate rounded-md border border-gray-200 bg-gray-100 px-2.5 text-sm leading-9 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300";
-
-const today = () => new Date().toISOString().slice(0, 10);
+const headCell = "px-1 pb-1.5 font-medium";
+const gridHeadCell = "px-2 py-2 font-medium";
+const gridCell = "px-2 py-1.5";
 
 // Section box like the parts_bazar fieldsets
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -35,6 +37,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+// the "Product Information" row above the grid
 interface Entry {
   hit: TransferBarcodeHit | null;
   barcode_text: string;
@@ -43,177 +46,292 @@ interface Entry {
   transfer_qty: string;
 }
 
-const emptyEntry = (): Entry => ({ hit: null, barcode_text: "", to_store_id: "", to_location_id: "", transfer_qty: "" });
-
-const toOptions = (rows: any[]): Option[] => rows.map((r) => ({ value: String(r.id), label: r.name }));
+function emptyEntry(): Entry {
+  return { hit: null, barcode_text: "", to_store_id: "", to_location_id: "", transfer_qty: "" };
+}
 
 function StockTransferForm() {
   const router = useRouter();
-  const editId = Number(useSearchParams().get("id")) || null;
+
+  // ?id=12 opens transfer 12 to edit
+  const idInUrl = Number(useSearchParams().get("id"));
+  const editId = idInUrl > 0 ? idInUrl : null;
+
   const [companies, setCompanies] = useState<Option[]>([]);
-  const [stores, setStores] = useState<(Option & { company_id: number | null })[]>([]);
+  const [stores, setStores] = useState<StoreOption[]>([]);
   const [locations, setLocations] = useState<Option[]>([]);
   const [transferDate, setTransferDate] = useState(today());
   const [companyId, setCompanyId] = useState("");
   const [remarks, setRemarks] = useState("");
-  const [entry, setEntry] = useState<Entry>(emptyEntry);
+  const [entry, setEntry] = useState<Entry>(emptyEntry());
   const [items, setItems] = useState<TransferItem[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<number | null>(null);
   const barcodeRef = useRef<HTMLInputElement>(null);
 
-  // stable function, so the date picker is not rebuilt on every render
+  // the date picker needs a function that does not change on every render
   const changeDate = useCallback((_dates: Date[], dateStr: string) => setTransferDate(dateStr), []);
 
   useEffect(() => {
     document.title = `${editId ? "Edit Stock Transfer" : "Stock Transfer Entry"} | Multibrand POS`;
-    api.get("/configure/companies", { params: { status: 1 } })
-      .then((res) => {
-        const list = toOptions(res.data.data.data);
+
+    loadOptions("/configure/companies")
+      .then((list) => {
         setCompanies(list);
-        // one company only: pick it, like the user's own company in parts_bazar
-        if (!editId && list.length === 1) setCompanyId(list[0].value);
+        // only one company: pick it, like the user's own company in parts_bazar
+        if (!editId && list.length === 1) {
+          setCompanyId(list[0].value);
+        }
       })
       .catch(() => toast.error("Failed to load companies"));
-    api.get("/configure/stores", { params: { status: 1 } })
-      .then((res) => setStores(res.data.data.data.map((s: any) => ({ value: String(s.id), label: s.name, company_id: s.company_id }))))
-      .catch(() => toast.error("Failed to load stores"));
+
+    loadStores().catch(() => toast.error("Failed to load stores"));
   }, [editId]);
+
+  async function loadStores() {
+    const res = await api.get("/configure/stores", { params: { status: 1 } });
+    const list: StoreOption[] = [];
+    for (const store of res.data.data.data) {
+      list.push({ value: String(store.id), label: store.name, company_id: store.company_id });
+    }
+    setStores(list);
+  }
 
   // Edit: fill the form from the pending transfer
   useEffect(() => {
-    if (!editId) return;
-    stockTransferService.getTransfer(editId).then((t) => {
-      if (t.status !== 0) {
-        toast.error("Already Approved can not update!");
-        router.replace("/inventory/stock-transfer-manage");
-        return;
-      }
-      setTransferDate(String(t.transfer_date).slice(0, 10));
-      setCompanyId(String(t.company_id ?? ""));
-      setRemarks(t.remarks ?? "");
-      setItems(t.details.map((d: any) => ({
-        barcode: d.barcode,
-        product_name: d.product?.name ?? "",
-        part_number: d.product?.part_number ?? "",
-        from_store_name: d.from_store?.name ?? "",
-        from_location_name: d.from_location?.name ?? "",
-        stock_qty: Number(d.stock_qty),
-        to_store_id: d.to_store_id,
-        to_store_name: d.to_store?.name ?? "",
-        to_location_id: d.to_location_id,
-        to_location_name: d.to_location?.name ?? "",
-        transfer_qty: Number(d.transfer_qty),
-      })));
-    }).catch(() => toast.error("Failed to load stock transfer"));
-  }, [editId, router]);
+    if (!editId) {
+      return;
+    }
+    fillFromTransfer(editId).catch(() => toast.error("Failed to load stock transfer"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId]);
 
-  const companyStores = stores.filter((s) => !companyId || !s.company_id || String(s.company_id) === companyId);
+  async function fillFromTransfer(transferId: number) {
+    const transfer = await stockTransferService.getTransfer(transferId);
 
-  const changeToStore = (storeId: string) => {
-    setEntry((e) => ({ ...e, to_store_id: storeId, to_location_id: "" }));
+    // an approved transfer is locked
+    if (transfer.status !== 0) {
+      toast.error("Already Approved can not update!");
+      router.replace("/inventory/stock-transfer-manage");
+      return;
+    }
+
+    setTransferDate(String(transfer.transfer_date).slice(0, 10));
+    setCompanyId(String(transfer.company_id ?? ""));
+    setRemarks(transfer.remarks ?? "");
+
+    const savedItems: TransferItem[] = [];
+    for (const detail of transfer.details) {
+      savedItems.push({
+        barcode: detail.barcode,
+        product_name: detail.product ? detail.product.name : "",
+        part_number: detail.product ? detail.product.part_number : "",
+        from_store_name: detail.from_store ? detail.from_store.name : "",
+        from_location_name: detail.from_location ? detail.from_location.name : "",
+        stock_qty: Number(detail.stock_qty),
+        to_store_id: detail.to_store_id,
+        to_store_name: detail.to_store ? detail.to_store.name : "",
+        to_location_id: detail.to_location_id,
+        to_location_name: detail.to_location ? detail.to_location.name : "",
+        transfer_qty: Number(detail.transfer_qty),
+      });
+    }
+    setItems(savedItems);
+  }
+
+  // stores of the picked company (a store with no company belongs to every company)
+  const companyStores: StoreOption[] = [];
+  for (const store of stores) {
+    if (!companyId || !store.company_id || String(store.company_id) === companyId) {
+      companyStores.push(store);
+    }
+  }
+
+  // a new "to store": load its locations
+  function changeToStore(storeId: string) {
+    setEntry((old) => ({ ...old, to_store_id: storeId, to_location_id: "" }));
     setLocations([]);
-    if (!storeId) return;
-    api.get("/configure/locations", { params: { store_id: storeId, status: 1 } })
-      .then((res) => setLocations(toOptions(res.data.data.data)))
+    if (!storeId) {
+      return;
+    }
+    loadOptions("/configure/locations", { store_id: storeId })
+      .then(setLocations)
       .catch(() => toast.error("Failed to load locations"));
-  };
+  }
 
-  const canSearchBarcode = () => {
+  // the barcode search needs a company
+  function canSearchBarcode() {
     if (!companyId) {
       toast.warn("Please Select Company First!");
       return false;
     }
     return true;
-  };
+  }
 
-  const selectBarcode = (hit: TransferBarcodeHit) => setEntry((e) => ({ ...e, hit, barcode_text: hit.barcode }));
+  function selectBarcode(hit: TransferBarcodeHit) {
+    setEntry((old) => ({ ...old, hit: hit, barcode_text: hit.barcode }));
+  }
+
+  // typing a new barcode drops the barcode picked before
+  function changeBarcodeText(text: string) {
+    setEntry((old) => ({ ...old, barcode_text: text, hit: null, transfer_qty: "" }));
+  }
 
   // parts_bazar qtyValidation: not more than the stock
-  const changeQty = (value: string) => {
+  function changeQty(value: string) {
     if (entry.hit && Number(value) > entry.hit.stock) {
       toast.error("Transfer Quantity cannot be greater than Stock Quantity");
-      setEntry((e) => ({ ...e, transfer_qty: "" }));
+      setEntry((old) => ({ ...old, transfer_qty: "" }));
       return;
     }
-    setEntry((e) => ({ ...e, transfer_qty: value }));
-  };
+    setEntry((old) => ({ ...old, transfer_qty: value }));
+  }
+
+  // Enter in the qty box works like the Add button
+  function addOnEnter(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addItem();
+    }
+  }
 
   // "Add" button: same checks and order as parts_bazar add()
-  const addItem = () => {
+  function addItem() {
     const hit = entry.hit;
-    if (!transferDate) return setError("Please Select Transfer date");
-    if (!hit) return setError("Please Enter Barcode");
-    if (items.some((item) => item.barcode === hit.barcode)) {
-      toast.error("Sorry! This Barcode is already added.");
+    if (!transferDate) {
+      setError("Please Select Transfer date");
       return;
     }
-    if (String(hit.store_id) === entry.to_store_id && String(hit.location_id ?? "") === entry.to_location_id) {
-      return setError("Location Should Be Different");
+    if (!hit) {
+      setError("Please Enter Barcode");
+      return;
     }
-    if (!entry.to_store_id) return setError("Please Select Transfer To Store");
-    if (!entry.to_location_id) return setError("Please Select To Location");
-    if (!(Number(entry.transfer_qty) > 0)) return setError("Please Enter Transfer Qty");
+    for (const item of items) {
+      if (item.barcode === hit.barcode) {
+        toast.error("Sorry! This Barcode is already added.");
+        return;
+      }
+    }
+    if (String(hit.store_id) === entry.to_store_id && String(hit.location_id ?? "") === entry.to_location_id) {
+      setError("Location Should Be Different");
+      return;
+    }
+    if (!entry.to_store_id) {
+      setError("Please Select Transfer To Store");
+      return;
+    }
+    if (!entry.to_location_id) {
+      setError("Please Select To Location");
+      return;
+    }
+    if (Number(entry.transfer_qty) <= 0 || isNaN(Number(entry.transfer_qty))) {
+      setError("Please Enter Transfer Qty");
+      return;
+    }
 
-    setItems((list) => [
-      ...list,
-      {
-        barcode: hit.barcode,
-        product_name: hit.product_name,
-        part_number: hit.part_number,
-        from_store_name: hit.store_name,
-        from_location_name: hit.location_name ?? "",
-        stock_qty: hit.stock,
-        to_store_id: Number(entry.to_store_id),
-        to_store_name: stores.find((s) => s.value === entry.to_store_id)?.label ?? "",
-        to_location_id: Number(entry.to_location_id),
-        to_location_name: locations.find((l) => l.value === entry.to_location_id)?.label ?? "",
-        transfer_qty: Number(entry.transfer_qty),
-      },
-    ]);
+    const newItem: TransferItem = {
+      barcode: hit.barcode,
+      product_name: hit.product_name,
+      part_number: hit.part_number,
+      from_store_name: hit.store_name,
+      from_location_name: hit.location_name ?? "",
+      stock_qty: hit.stock,
+      to_store_id: Number(entry.to_store_id),
+      to_store_name: optionLabel(stores, entry.to_store_id),
+      to_location_id: Number(entry.to_location_id),
+      to_location_name: optionLabel(locations, entry.to_location_id),
+      transfer_qty: Number(entry.transfer_qty),
+    };
+    setItems([...items, newItem]);
     setError("");
+
     // clear the whole row for the next barcode, like parts_bazar
     setEntry(emptyEntry());
     setLocations([]);
-    setTimeout(() => barcodeRef.current?.focus(), 0);
-  };
+    setTimeout(() => {
+      if (barcodeRef.current) {
+        barcodeRef.current.focus();
+      }
+    }, 0);
+  }
 
-  const save = async () => {
-    if (!transferDate) return setError("Please Select Transfer Date");
-    if (!companyId) return setError("Please Select Company First!");
-    if (items.length === 0) return setError("Sorry! No Data in Grid.");
+  function removeItem(index: number) {
+    const newItems = [];
+    for (let i = 0; i < items.length; i++) {
+      if (i !== index) {
+        newItems.push(items[i]);
+      }
+    }
+    setItems(newItems);
+  }
 
+  async function save() {
+    if (!transferDate) {
+      setError("Please Select Transfer Date");
+      return;
+    }
+    if (!companyId) {
+      setError("Please Select Company First!");
+      return;
+    }
+    if (items.length === 0) {
+      setError("Sorry! No Data in Grid.");
+      return;
+    }
+
+    // only the fields the API needs from each grid row
+    const payloadItems = [];
+    for (const item of items) {
+      payloadItems.push({
+        barcode: item.barcode,
+        to_store_id: item.to_store_id,
+        to_location_id: item.to_location_id,
+        transfer_qty: item.transfer_qty,
+      });
+    }
     const payload = {
       transfer_date: transferDate,
       company_id: Number(companyId),
       remarks: remarks || undefined,
-      items: items.map(({ barcode, to_store_id, to_location_id, transfer_qty }) => ({ barcode, to_store_id, to_location_id, transfer_qty })),
+      items: payloadItems,
     };
+
+    setSaving(true);
+    setError("");
     try {
-      setSaving(true);
-      setError("");
-      const saved = editId ? await stockTransferService.updateTransfer(editId, payload) : await stockTransferService.createTransfer(payload);
-      toast.success(editId ? "Stock Transfer Updated Successfully." : "Stock Transfer Saved Successfully.");
-      if (!editId) {
+      let saved;
+      if (editId) {
+        saved = await stockTransferService.updateTransfer(editId, payload);
+        toast.success("Stock Transfer Updated Successfully.");
+      } else {
+        saved = await stockTransferService.createTransfer(payload);
+        toast.success("Stock Transfer Saved Successfully.");
         setItems([]);
         setEntry(emptyEntry());
         setRemarks("");
       }
       setSavedId(saved.id);
-    } catch (err: any) {
-      const errors = err?.response?.data?.errors;
-      const firstError = errors && Object.values(errors)[0];
-      setError((Array.isArray(firstError) ? firstError[0] : null) || err?.response?.data?.message || "Data not saved. Please solve the above errors!");
+    } catch (err) {
+      setError(apiErrorMessage(err, "Data not saved. Please solve the above errors!"));
     } finally {
       setSaving(false);
     }
-  };
+  }
 
-  const closeView = () => {
+  // after editing, closing the transfer view goes back to the manage page
+  function closeView() {
     setSavedId(null);
-    if (editId) router.push("/inventory/stock-transfer-manage");
-  };
+    if (editId) {
+      router.push("/inventory/stock-transfer-manage");
+    }
+  }
+
+  const hit = entry.hit;
+  let saveLabel = editId ? "Update" : "Save";
+  if (saving) {
+    saveLabel = "Saving...";
+  }
 
   return (
     <div>
@@ -229,7 +347,13 @@ function StockTransferForm() {
             <div>
               <Label required>Company</Label>
               {/* parts_bazar locks the company once items are in the grid */}
-              <ReactSelect options={companies} placeholder="Select" value={companyId} isDisabled={items.length > 0} onChange={(v) => setCompanyId(String(v ?? ""))} />
+              <ReactSelect
+                options={companies}
+                placeholder="Select"
+                value={companyId}
+                isDisabled={items.length > 0}
+                onChange={(value) => setCompanyId(value ? String(value) : "")}
+              />
             </div>
             <div>
               <Label>Remarks</Label>
@@ -250,44 +374,59 @@ function StockTransferForm() {
             <table className="w-full min-w-[1060px] table-fixed text-[13px]">
               <thead>
                 <tr className="text-left text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {[
-                    ["Transfer From Store", "w-[120px]"], ["Location", "w-[95px]"], ["Product Name", ""], ["Part Number", "w-[95px]"],
-                    ["Barcode *", "w-[140px]"], ["Stock Qty", "w-[65px]"], ["Transfer To Store *", "w-[150px]"], ["Location *", "w-[130px]"],
-                    ["Transfer Qty *", "w-[75px]"], ["", "w-[70px]"],
-                  ].map(([h, width], i) => (
-                    <th key={i} className={`px-1 pb-1.5 font-medium ${width}`}>{h}</th>
-                  ))}
+                  <th className={`${headCell} w-[120px]`}>Transfer From Store</th>
+                  <th className={`${headCell} w-[95px]`}>Location</th>
+                  <th className={headCell}>Product Name</th>
+                  <th className={`${headCell} w-[95px]`}>Part Number</th>
+                  <th className={`${headCell} w-[140px]`}>Barcode *</th>
+                  <th className={`${headCell} w-[65px]`}>Stock Qty</th>
+                  <th className={`${headCell} w-[150px]`}>Transfer To Store *</th>
+                  <th className={`${headCell} w-[130px]`}>Location *</th>
+                  <th className={`${headCell} w-[75px]`}>Transfer Qty *</th>
+                  <th className={`${headCell} w-[70px]`}></th>
                 </tr>
               </thead>
               <tbody>
                 <tr className="align-top">
-                  <td className="w-[120px] px-1"><div className={readOnlyClass} title={entry.hit?.store_name ?? ""}>{entry.hit?.store_name ?? ""}</div></td>
-                  <td className="w-[95px] px-1"><div className={readOnlyClass} title={entry.hit?.location_name ?? ""}>{entry.hit?.location_name ?? ""}</div></td>
-                  <td className="px-1"><div className={readOnlyClass} title={entry.hit?.product_name ?? ""}>{entry.hit?.product_name ?? ""}</div></td>
-                  <td className="w-[95px] px-1"><div className={readOnlyClass} title={entry.hit?.part_number ?? ""}>{entry.hit?.part_number ?? ""}</div></td>
+                  <td className="w-[120px] px-1"><div className={readOnlyClass} title={hit ? hit.store_name : ""}>{hit ? hit.store_name : ""}</div></td>
+                  <td className="w-[95px] px-1"><div className={readOnlyClass} title={hit ? hit.location_name ?? "" : ""}>{hit ? hit.location_name : ""}</div></td>
+                  <td className="px-1"><div className={readOnlyClass} title={hit ? hit.product_name : ""}>{hit ? hit.product_name : ""}</div></td>
+                  <td className="w-[95px] px-1"><div className={readOnlyClass} title={hit ? hit.part_number : ""}>{hit ? hit.part_number : ""}</div></td>
                   <td className="w-[140px] px-1">
                     <Autocomplete
                       inputRef={barcodeRef}
                       value={entry.barcode_text}
-                      onChange={(text) => setEntry((e) => ({ ...e, barcode_text: text, hit: null, transfer_qty: "" }))}
+                      onChange={changeBarcodeText}
                       canSearch={canSearchBarcode}
                       search={(term) => stockTransferService.searchBarcodes(term, Number(companyId), editId)}
                       onSelect={selectBarcode}
                       placeholder="Barcode"
-                      renderItem={(b) => (
+                      renderItem={(barcode) => (
                         <div>
-                          <div className="font-mono font-medium">{b.barcode}</div>
-                          <div className="text-xs text-gray-500">{b.product_name} · {b.store_name} / {b.location_name} · Stock {b.stock}</div>
+                          <div className="font-mono font-medium">{barcode.barcode}</div>
+                          <div className="text-xs text-gray-500">
+                            {barcode.product_name} · {barcode.store_name} / {barcode.location_name} · Stock {barcode.stock}
+                          </div>
                         </div>
                       )}
                     />
                   </td>
-                  <td className="w-[65px] px-1"><div className={`${readOnlyClass} text-right`}>{entry.hit ? entry.hit.stock : ""}</div></td>
+                  <td className="w-[65px] px-1"><div className={`${readOnlyClass} text-right`}>{hit ? hit.stock : ""}</div></td>
                   <td className="w-[150px] px-1">
-                    <ReactSelect options={companyStores} placeholder="Select" value={entry.to_store_id} onChange={(v) => changeToStore(String(v ?? ""))} />
+                    <ReactSelect
+                      options={companyStores}
+                      placeholder="Select"
+                      value={entry.to_store_id}
+                      onChange={(value) => changeToStore(value ? String(value) : "")}
+                    />
                   </td>
                   <td className="w-[130px] px-1">
-                    <ReactSelect options={locations} placeholder="Select" value={entry.to_location_id} onChange={(v) => setEntry((e) => ({ ...e, to_location_id: String(v ?? "") }))} />
+                    <ReactSelect
+                      options={locations}
+                      placeholder="Select"
+                      value={entry.to_location_id}
+                      onChange={(value) => setEntry((old) => ({ ...old, to_location_id: value ? String(value) : "" }))}
+                    />
                   </td>
                   <td className="w-[75px] px-1">
                     <input
@@ -297,8 +436,8 @@ function StockTransferForm() {
                       value={entry.transfer_qty}
                       placeholder="Qty"
                       onChange={(e) => changeQty(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addItem())}
-                      onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                      onKeyDown={addOnEnter}
+                      onWheel={blurOnWheel}
                       className={`${inputClass} text-right`}
                     />
                   </td>
@@ -318,35 +457,49 @@ function StockTransferForm() {
             <table className="w-full min-w-[1150px] text-[13px]">
               <thead className="sticky top-0 bg-gray-50 dark:bg-gray-800">
                 <tr className="text-left text-xs text-gray-500 dark:text-gray-400">
-                  {["SL", "Transfer From", "Location", "Product Name", "Part Number", "Barcode", "Stock Qty", "Transfer To", "Location", "Transfer Qty", "Action"].map((h, i) => (
-                    <th key={i} className={`px-2 py-2 font-medium ${i === 6 || i === 9 ? "text-right" : ""}`}>{h}</th>
-                  ))}
+                  <th className={gridHeadCell}>SL</th>
+                  <th className={gridHeadCell}>Transfer From</th>
+                  <th className={gridHeadCell}>Location</th>
+                  <th className={gridHeadCell}>Product Name</th>
+                  <th className={gridHeadCell}>Part Number</th>
+                  <th className={gridHeadCell}>Barcode</th>
+                  <th className={`${gridHeadCell} text-right`}>Stock Qty</th>
+                  <th className={gridHeadCell}>Transfer To</th>
+                  <th className={gridHeadCell}>Location</th>
+                  <th className={`${gridHeadCell} text-right`}>Transfer Qty</th>
+                  <th className={gridHeadCell}>Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
-                {items.length === 0 ? (
-                  <tr><td colSpan={11} className="py-6 text-center text-gray-400">No item added yet</td></tr>
-                ) : (
-                  items.map((item, i) => (
-                    <tr key={item.barcode} className="text-gray-700 dark:text-gray-300">
-                      <td className="px-2 py-1.5">{i + 1}</td>
-                      <td className="px-2 py-1.5">{item.from_store_name}</td>
-                      <td className="px-2 py-1.5">{item.from_location_name}</td>
-                      <td className="px-2 py-1.5">{item.product_name}</td>
-                      <td className="px-2 py-1.5">{item.part_number}</td>
-                      <td className="px-2 py-1.5 font-mono text-xs font-medium">{item.barcode}</td>
-                      <td className="px-2 py-1.5 text-right">{item.stock_qty}</td>
-                      <td className="px-2 py-1.5">{item.to_store_name}</td>
-                      <td className="px-2 py-1.5">{item.to_location_name}</td>
-                      <td className="px-2 py-1.5 text-right font-semibold">{item.transfer_qty}</td>
-                      <td className="px-2 py-1.5">
-                        <button type="button" title="Remove" onClick={() => setItems((list) => list.filter((_, x) => x !== i))} className="rounded p-1.5 text-error-500 hover:bg-error-50 dark:hover:bg-error-500/10">
-                          <FiTrash size={14} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                {items.length === 0 && (
+                  <tr>
+                    <td colSpan={11} className="py-6 text-center text-gray-400">No item added yet</td>
+                  </tr>
                 )}
+                {items.map((item, index) => (
+                  <tr key={item.barcode} className="text-gray-700 dark:text-gray-300">
+                    <td className={gridCell}>{index + 1}</td>
+                    <td className={gridCell}>{item.from_store_name}</td>
+                    <td className={gridCell}>{item.from_location_name}</td>
+                    <td className={gridCell}>{item.product_name}</td>
+                    <td className={gridCell}>{item.part_number}</td>
+                    <td className={`${gridCell} font-mono text-xs font-medium`}>{item.barcode}</td>
+                    <td className={`${gridCell} text-right`}>{item.stock_qty}</td>
+                    <td className={gridCell}>{item.to_store_name}</td>
+                    <td className={gridCell}>{item.to_location_name}</td>
+                    <td className={`${gridCell} text-right font-semibold`}>{item.transfer_qty}</td>
+                    <td className={gridCell}>
+                      <button
+                        type="button"
+                        title="Remove"
+                        onClick={() => removeItem(index)}
+                        className="rounded p-1.5 text-error-500 hover:bg-error-50 dark:hover:bg-error-500/10"
+                      >
+                        <FiTrash size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -355,7 +508,7 @@ function StockTransferForm() {
         {/* on the left, so the bottom-right messages never cover it */}
         <div className="flex justify-start">
           <Button type="button" onClick={save} disabled={saving}>
-            {saving ? "Saving..." : editId ? "Update" : "Save"}
+            {saveLabel}
           </Button>
         </div>
       </div>

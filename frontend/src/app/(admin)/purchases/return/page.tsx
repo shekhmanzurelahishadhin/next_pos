@@ -9,7 +9,7 @@ import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import ComponentCard from "@/components/common/ComponentCard";
 import { DataTable } from "@/components/tables/DataTable";
 import ActionButtons from "@/components/ui/button/ActionButton";
-import { api } from "@/lib/api";
+import { loadOptions } from "@/lib/options";
 import { formatDate } from "@/lib/format";
 import { purchaseReturnService, ReturnableRow } from "@/services/purchaseReturnService";
 import { ReturnChalanModal, ReturnFormModal } from "../components/PurchaseReturnModals";
@@ -45,8 +45,8 @@ export default function PurchaseReturnPage() {
 
   useEffect(() => {
     document.title = "Purchase Return | Multibrand POS";
-    api.get("/configure/stores", { params: { status: 1 } })
-      .then((res) => setStores(res.data.data.data.map((s: any) => ({ value: String(s.id), label: s.name }))))
+    loadOptions("/configure/stores")
+      .then(setStores)
       .catch(() => {});
   }, []);
 

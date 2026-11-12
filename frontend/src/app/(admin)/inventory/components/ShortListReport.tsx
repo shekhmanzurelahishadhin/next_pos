@@ -24,20 +24,31 @@ const PRINT_STYLE = `
 const cell = "border border-gray-200 px-2 py-1 dark:border-gray-700";
 
 export function ShortListReportModal({ maxSlNo, onClose }: { maxSlNo: number | null; onClose: () => void }) {
-  const [data, setData] = useState<any>(null);
+  const [shortList, setShortList] = useState<any>(null);
   const printArea = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setData(null);
-    if (maxSlNo) shortListOrderService.getList(maxSlNo).then(setData).catch(() => toast.error("Failed to load short list"));
+    setShortList(null);
+    if (maxSlNo) {
+      shortListOrderService.getList(maxSlNo)
+        .then(setShortList)
+        .catch(() => toast.error("Failed to load short list"));
+    }
   }, [maxSlNo]);
 
-  const print = () => {
-    if (printArea.current) printHtml(`Short List ${maxSlNo}`, printArea.current.innerHTML, PRINT_STYLE);
-  };
+  function print() {
+    if (!printArea.current) {
+      return;
+    }
+    printHtml(`Short List ${maxSlNo}`, printArea.current.innerHTML, PRINT_STYLE);
+  }
 
-  const r = data;
-  const total = r ? r.lines.reduce((sum: number, d: any) => sum + Number(d.purchase_price) * Number(d.order_qty), 0) : 0;
+  let grandTotal = 0;
+  if (shortList) {
+    for (const line of shortList.lines) {
+      grandTotal += Number(line.purchase_price) * Number(line.order_qty);
+    }
+  }
 
   return (
     <Modal
@@ -48,26 +59,26 @@ export function ShortListReportModal({ maxSlNo, onClose }: { maxSlNo: number | n
       footer={
         <>
           <Button type="button" size="sm" variant="outline" onClick={onClose}>Close</Button>
-          <Button type="button" size="sm" onClick={print} disabled={!r}>Print</Button>
+          <Button type="button" size="sm" onClick={print} disabled={!shortList}>Print</Button>
         </>
       }
     >
-      {!r ? (
+      {!shortList ? (
         <p className="py-8 text-center text-sm text-gray-500">Loading...</p>
       ) : (
         <div ref={printArea} className="text-[13px] text-gray-800 dark:text-gray-200">
           <div className="text-center">
-            <h2 className="text-lg font-semibold">{r.company?.name ?? "Short List Order"}</h2>
-            {r.company?.address && <div className="text-xs text-gray-500">{r.company.address}</div>}
-            {r.company?.phone && <div className="text-xs text-gray-500">Phone No: {r.company.phone}</div>}
+            <h2 className="text-lg font-semibold">{shortList.company ? shortList.company.name : "Short List Order"}</h2>
+            {shortList.company?.address && <div className="text-xs text-gray-500">{shortList.company.address}</div>}
+            {shortList.company?.phone && <div className="text-xs text-gray-500">Phone No: {shortList.company.phone}</div>}
             <h3 className="mt-1 text-sm font-semibold">SHORT LIST ORDER</h3>
           </div>
 
           <div className="info my-3 flex flex-wrap justify-between gap-6">
             <table>
               <tbody>
-                <tr><td className="pr-3 text-gray-500">SL No</td><td className="font-semibold">{r.max_sl_no}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Date</td><td>{formatDate(r.created_at)}</td></tr>
+                <tr><td className="pr-3 text-gray-500">SL No</td><td className="font-semibold">{shortList.max_sl_no}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Date</td><td>{formatDate(shortList.created_at)}</td></tr>
               </tbody>
             </table>
           </div>
@@ -75,33 +86,38 @@ export function ShortListReportModal({ maxSlNo, onClose }: { maxSlNo: number | n
           <table className="items w-full border-collapse text-xs">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-800">
-                {["Sl No", "Store", "Product Name", "Part Number", "Stock Qty", "Purchase Price", "Order Qty", "Total"].map((h) => (
-                  <th key={h} className={`${cell} text-left font-medium`}>{h}</th>
-                ))}
+                <th className={`${cell} text-left font-medium`}>Sl No</th>
+                <th className={`${cell} text-left font-medium`}>Store</th>
+                <th className={`${cell} text-left font-medium`}>Product Name</th>
+                <th className={`${cell} text-left font-medium`}>Part Number</th>
+                <th className={`${cell} text-left font-medium`}>Stock Qty</th>
+                <th className={`${cell} text-left font-medium`}>Purchase Price</th>
+                <th className={`${cell} text-left font-medium`}>Order Qty</th>
+                <th className={`${cell} text-left font-medium`}>Total</th>
               </tr>
             </thead>
             <tbody>
-              {r.lines.map((d: any, i: number) => (
-                <tr key={d.id}>
-                  <td className={cell}>{i + 1}</td>
-                  <td className={cell}>{d.store?.name}</td>
-                  <td className={cell}>{d.product?.name}</td>
-                  <td className={cell}>{d.code || d.product?.part_number}</td>
-                  <td className={`${cell} text-right`}>{Number(d.stock_qty)}</td>
-                  <td className={`${cell} text-right`}>{formatMoney(d.purchase_price)}</td>
-                  <td className={`${cell} text-right`}>{Number(d.order_qty)}</td>
-                  <td className={`${cell} text-right`}>{formatMoney(Number(d.purchase_price) * Number(d.order_qty))}</td>
+              {shortList.lines.map((line: any, index: number) => (
+                <tr key={line.id}>
+                  <td className={cell}>{index + 1}</td>
+                  <td className={cell}>{line.store?.name}</td>
+                  <td className={cell}>{line.product?.name}</td>
+                  <td className={cell}>{line.code || line.product?.part_number}</td>
+                  <td className={`${cell} text-right`}>{Number(line.stock_qty)}</td>
+                  <td className={`${cell} text-right`}>{formatMoney(line.purchase_price)}</td>
+                  <td className={`${cell} text-right`}>{Number(line.order_qty)}</td>
+                  <td className={`${cell} text-right`}>{formatMoney(Number(line.purchase_price) * Number(line.order_qty))}</td>
                 </tr>
               ))}
               <tr>
                 <td colSpan={7} className={`${cell} text-right font-semibold`}>Grand Total</td>
-                <td className={`${cell} text-right font-semibold`}>{formatMoney(total)}</td>
+                <td className={`${cell} text-right font-semibold`}>{formatMoney(grandTotal)}</td>
               </tr>
             </tbody>
           </table>
 
           <div className="sign mt-14 flex justify-between text-xs">
-            <span className="w-40 border-t border-gray-400 pt-1 text-center">Prepared By: {r.created_by ?? ""}</span>
+            <span className="w-40 border-t border-gray-400 pt-1 text-center">Prepared By: {shortList.created_by ? shortList.created_by : ""}</span>
             <span className="w-40 border-t border-gray-400 pt-1 text-center">Signature (Store Manager)</span>
             <span className="w-40 border-t border-gray-400 pt-1 text-center">Signature</span>
           </div>

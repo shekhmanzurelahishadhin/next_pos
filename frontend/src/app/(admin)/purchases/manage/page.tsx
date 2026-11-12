@@ -12,8 +12,8 @@ import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import ComponentCard from "@/components/common/ComponentCard";
 import { DataTable } from "@/components/tables/DataTable";
 import ActionButtons from "@/components/ui/button/ActionButton";
-import { api } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/format";
+import { apiErrorMessage, loadOptions, optionLabel } from "@/lib/options";
 import { purchaseService, PurchaseFormOptions, PurchaseRow, PURCHASE_STATUS, Option } from "@/services/purchaseService";
 import { PurchaseVoucher } from "../components/PurchaseVoucher";
 
@@ -28,8 +28,6 @@ const STATUS_COLORS: Record<number, string> = {
   [PURCHASE_STATUS.APPROVED]: "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-500",
   [PURCHASE_STATUS.CANCELLED]: "bg-error-50 text-error-600 dark:bg-error-500/15 dark:text-error-500",
 };
-
-const nameOf = (list: Option[] | undefined, code: string) => list?.find((o) => o.value === String(code))?.label ?? "—";
 
 // Purchase Manage like parts_bazar: one row per item, PO columns merged
 export default function PurchaseManage() {
@@ -66,10 +64,9 @@ export default function PurchaseManage() {
 
   useEffect(() => {
     document.title = "Purchase Manage | Multibrand POS";
+    // the lists are only for the filters, the page still works without them
     purchaseService.getFormOptions().then(setOptions).catch(() => {});
-    api.get("/configure/stores", { params: { status: 1 } })
-      .then((res) => setStores(res.data.data.data.map((s: any) => ({ value: String(s.id), label: s.name }))))
-      .catch(() => {});
+    loadOptions("/configure/stores").then(setStores).catch(() => {});
   }, []);
 
   const handleFilterChange = useCallback((name: string, value: string | number) => {
@@ -77,22 +74,30 @@ export default function PurchaseManage() {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   }, []);
 
-  // Ask, run, show the message from the server, reload
-  const act = useCallback(async (title: string, text: string, action: () => Promise<void>, done: string) => {
+  // Ask first, then run the action, show the message and reload the list
+  const act = useCallback(async (title: string, text: string, action: () => Promise<void>, doneMessage: string) => {
     const result = await confirm({ title, text });
-    if (!result.isConfirmed) return;
+    if (!result.isConfirmed) {
+      return;
+    }
     try {
       await action();
-      toast.success(done);
+      toast.success(doneMessage);
       load();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Something went wrong");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Something went wrong"));
     }
   }, [confirm, load]);
 
   const columns = useMemo((): ColumnDef<PurchaseRow>[] => {
-    const byPo = (row: PurchaseRow) => row.purchase_id;
-    const money = (value: string | number) => <span className="block text-right">{formatMoney(value)}</span>;
+    // the PO columns are merged over the item rows of one PO
+    function byPo(row: PurchaseRow) {
+      return row.purchase_id;
+    }
+
+    function money(value: string | number) {
+      return <span className="block text-right">{formatMoney(value)}</span>;
+    }
 
     return [
       {
@@ -100,7 +105,7 @@ export default function PurchaseManage() {
         accessorKey: "cash_due",
         header: "Cash / Due",
         meta: { filterVariant: "select", filterOptions: options?.cash_due ?? [], mergeBy: byPo, widthClass: "w-[90px]" },
-        cell: ({ row }) => nameOf(options?.cash_due, row.original.cash_due),
+        cell: ({ row }) => optionLabel(options?.cash_due, row.original.cash_due),
       },
       {
         id: "po_no",
@@ -119,7 +124,7 @@ export default function PurchaseManage() {
         accessorKey: "purchase_type",
         header: "Local / Import",
         meta: { filterVariant: "select", filterOptions: options?.purchase_type ?? [], mergeBy: byPo, widthClass: "w-[100px]" },
-        cell: ({ row }) => nameOf(options?.purchase_type, row.original.purchase_type),
+        cell: ({ row }) => optionLabel(options?.purchase_type, row.original.purchase_type),
       },
       {
         id: "supplier_name",
@@ -225,38 +230,38 @@ export default function PurchaseManage() {
         header: "Actions",
         meta: { filterVariant: "none", mergeBy: byPo, widthClass: "w-[120px]" },
         cell: ({ row }) => {
-          const r = row.original;
-          const pending = r.status === PURCHASE_STATUS.PENDING;
+          const purchase = row.original;
+          const pending = purchase.status === PURCHASE_STATUS.PENDING;
           return (
             <ActionButtons
-              row={r}
+              row={purchase}
               buttons={[
-                { icon: FiEye, variant: "success", size: "sm", tooltip: "View / Print", onClick: () => setVoucherId(r.purchase_id) },
+                { icon: FiEye, variant: "success", size: "sm", tooltip: "View / Print", onClick: () => setVoucherId(purchase.purchase_id) },
                 {
                   icon: FiCheckCircle, variant: "success", size: "sm", tooltip: "Approve (receive into stock)",
                   show: () => pending && hasPermission("purchase.approve"),
-                  onClick: () => act("Approve Purchase?", `Approve ${r.po_no}? Stock, purchase price and payment will be saved and the PO will be locked.`,
-                    () => purchaseService.approvePurchase(r.purchase_id), `${r.po_no} approved`),
+                  onClick: () => act("Approve Purchase?", `Approve ${purchase.po_no}? Stock, purchase price and payment will be saved and the PO will be locked.`,
+                    () => purchaseService.approvePurchase(purchase.purchase_id), `${purchase.po_no} approved`),
                 },
                 {
                   icon: FiEdit, variant: "primary", size: "sm", tooltip: "Edit",
                   show: () => pending && hasPermission("purchase.edit"),
-                  onClick: () => router.push(`/purchases/purchase?id=${r.purchase_id}`),
+                  onClick: () => router.push(`/purchases/purchase?id=${purchase.purchase_id}`),
                 },
                 {
                   icon: FiXCircle, variant: "warning", size: "sm", tooltip: "Cancel Order",
                   show: () => pending && hasPermission("purchase.delete"),
-                  onClick: () => act("Cancel Purchase?", `Cancel order ${r.po_no}?`, () => purchaseService.cancelPurchase(r.purchase_id), `Order ${r.po_no} cancelled`),
+                  onClick: () => act("Cancel Purchase?", `Cancel order ${purchase.po_no}?`, () => purchaseService.cancelPurchase(purchase.purchase_id), `Order ${purchase.po_no} cancelled`),
                 },
                 {
                   icon: FiRotateCcw, variant: "success", size: "sm", tooltip: "Undo Cancel",
-                  show: () => r.status === PURCHASE_STATUS.CANCELLED && hasPermission("purchase.delete"),
-                  onClick: () => act("Undo Cancel?", `Make ${r.po_no} pending again?`, () => purchaseService.undoCancelPurchase(r.purchase_id), `Order ${r.po_no} cancelation undone`),
+                  show: () => purchase.status === PURCHASE_STATUS.CANCELLED && hasPermission("purchase.delete"),
+                  onClick: () => act("Undo Cancel?", `Make ${purchase.po_no} pending again?`, () => purchaseService.undoCancelPurchase(purchase.purchase_id), `Order ${purchase.po_no} cancelation undone`),
                 },
                 {
                   icon: FiTrash, variant: "danger", size: "sm", tooltip: "Delete",
-                  show: () => r.status !== PURCHASE_STATUS.APPROVED && hasPermission("purchase.delete"),
-                  onClick: () => act("Delete Purchase?", `Delete ${r.po_no}? This can not be undone.`, () => purchaseService.deletePurchase(r.purchase_id), `${r.po_no} deleted`),
+                  show: () => purchase.status !== PURCHASE_STATUS.APPROVED && hasPermission("purchase.delete"),
+                  onClick: () => act("Delete Purchase?", `Delete ${purchase.po_no}? This can not be undone.`, () => purchaseService.deletePurchase(purchase.purchase_id), `${purchase.po_no} deleted`),
                 },
               ]}
             />

@@ -8,14 +8,14 @@ import Label from "@/components/form/Label";
 import DatePicker from "@/components/form/date-picker";
 import { printHtml } from "@/lib/print";
 import { formatDate, formatMoney } from "@/lib/format";
+import { apiErrorMessage, blurOnWheel, today } from "@/lib/options";
 import { purchaseReturnService, ReturnForm } from "@/services/purchaseReturnService";
 
 const inputClass =
   "h-9 w-full rounded-md border border-gray-300 bg-transparent px-2.5 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90";
 const readOnlyClass =
   "flex h-9 w-full items-center rounded-md bg-gray-100 px-3 text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-300";
-
-const today = () => new Date().toISOString().slice(0, 10);
+const formHeadCell = "px-2 py-2 text-center font-medium";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -46,55 +46,88 @@ export function ReturnFormModal({ purchaseId, onClose, onSaved }: ReturnFormModa
     setReturnDate(today());
     setRemarks("");
     setIsRefund(false);
-    if (!purchaseId) return;
+    if (!purchaseId) {
+      return;
+    }
     purchaseReturnService.getForm(purchaseId)
       .then(setForm)
       .catch((err) => {
-        toast.error(err?.response?.data?.message || "Failed to load return form");
+        toast.error(apiErrorMessage(err, "Failed to load return form"));
         onClose();
       });
   }, [purchaseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // the date picker needs a function that does not change on every render
   const changeDate = useCallback((_dates: Date[], dateStr: string) => setReturnDate(dateStr), []);
 
-  // parts_bazar calculateGridInLine: return qty can not pass the remaining qty or the closing stock
-  const changeQty = (detailId: number, value: string, remaining: number, stock: number) => {
-    const n = parseInt(value);
-    if (value !== "" && (isNaN(n) || n < 0 || n > remaining || n > stock)) {
-      toast.error("Return Qty cannot be greater than Closing Stock or Remaining Qty.");
-      setQty((q) => ({ ...q, [detailId]: "" }));
+  // parts_bazar calculateGridInLine: the return qty can not pass the remaining qty or the closing stock
+  function changeQty(detailId: number, value: string, remaining: number, stock: number) {
+    if (value !== "") {
+      const number = parseInt(value);
+      if (isNaN(number) || number < 0 || number > remaining || number > stock) {
+        toast.error("Return Qty cannot be greater than Closing Stock or Remaining Qty.");
+        setQty((old) => ({ ...old, [detailId]: "" }));
+        return;
+      }
+    }
+    setQty((old) => ({ ...old, [detailId]: value }));
+  }
+
+  // return qty typed on one item, 0 when empty
+  function lineQty(detailId: number) {
+    const number = parseInt(qty[detailId] ?? "");
+    if (isNaN(number)) {
+      return 0;
+    }
+    return number;
+  }
+
+  let totalAmount = 0;
+  let hasReturnQty = false;
+  if (form) {
+    for (const item of form.items) {
+      totalAmount += item.unit_price * lineQty(item.purchase_detail_id);
+      if (lineQty(item.purchase_detail_id) > 0) {
+        hasReturnQty = true;
+      }
+    }
+  }
+
+  async function save() {
+    if (!form) {
       return;
     }
-    setQty((q) => ({ ...q, [detailId]: value }));
-  };
+    if (!returnDate) {
+      toast.error("Please select return date!");
+      return;
+    }
+    if (!hasReturnQty) {
+      toast.error("Please enter return qty!");
+      return;
+    }
 
-  const lineQty = (detailId: number) => parseInt(qty[detailId] ?? "") || 0;
-  const totalAmount = form?.items.reduce((sum, item) => sum + item.unit_price * lineQty(item.purchase_detail_id), 0) ?? 0;
+    const items = [];
+    for (const item of form.items) {
+      items.push({ purchase_detail_id: item.purchase_detail_id, return_qty: lineQty(item.purchase_detail_id) });
+    }
 
-  const save = async () => {
-    if (!form) return;
-    if (!returnDate) return toast.error("Please select return date!");
-    if (!form.items.some((item) => lineQty(item.purchase_detail_id) > 0)) return toast.error("Please enter return qty!");
-
+    setSaving(true);
     try {
-      setSaving(true);
       const saved = await purchaseReturnService.createReturn({
         purchase_id: form.purchase_id,
         return_date: returnDate,
         is_refund: isRefund,
         remarks: remarks || undefined,
-        items: form.items.map((item) => ({ purchase_detail_id: item.purchase_detail_id, return_qty: lineQty(item.purchase_detail_id) })),
+        items: items,
       });
       toast.success(`Successfully Returned (${saved.return_no})`);
       onSaved(saved.id);
-    } catch (err: any) {
-      const errors = err?.response?.data?.errors;
-      const first = errors && Object.values(errors)[0];
-      toast.error((Array.isArray(first) ? first[0] : null) || err?.response?.data?.message || "Return not saved");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Return not saved"));
     } finally {
       setSaving(false);
     }
-  };
+  }
 
   return (
     <Modal
@@ -139,18 +172,27 @@ export function ReturnFormModal({ purchaseId, onClose, onSaved }: ReturnFormModa
             <table className="w-full min-w-[900px] text-[13px]">
               <thead>
                 <tr className="bg-gray-50 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                  {["SL", "Location", "Product Name", "Part Number", "Barcode", "Receive Qty", "Old Return Qty", "Closing Stock", "Return Qty", "Remaining Qty", "Unit Price", "Amount"].map((h) => (
-                    <th key={h} className="px-2 py-2 text-center font-medium">{h}</th>
-                  ))}
+                  <th className={formHeadCell}>SL</th>
+                  <th className={formHeadCell}>Location</th>
+                  <th className={formHeadCell}>Product Name</th>
+                  <th className={formHeadCell}>Part Number</th>
+                  <th className={formHeadCell}>Barcode</th>
+                  <th className={formHeadCell}>Receive Qty</th>
+                  <th className={formHeadCell}>Old Return Qty</th>
+                  <th className={formHeadCell}>Closing Stock</th>
+                  <th className={formHeadCell}>Return Qty</th>
+                  <th className={formHeadCell}>Remaining Qty</th>
+                  <th className={formHeadCell}>Unit Price</th>
+                  <th className={formHeadCell}>Amount</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-center text-gray-700 dark:divide-white/[0.05] dark:text-gray-300">
-                {form.items.map((item, i) => {
+                {form.items.map((item, index) => {
                   const remaining = item.received_qty - item.returned_qty;
-                  const q = lineQty(item.purchase_detail_id);
+                  const returnQty = lineQty(item.purchase_detail_id);
                   return (
                     <tr key={item.purchase_detail_id}>
-                      <td className="px-2 py-1.5">{i + 1}</td>
+                      <td className="px-2 py-1.5">{index + 1}</td>
                       <td className="px-2 py-1.5">{item.location_name}</td>
                       <td className="px-2 py-1.5">{item.product_name}</td>
                       <td className="px-2 py-1.5 font-medium">{item.part_number}</td>
@@ -166,13 +208,13 @@ export function ReturnFormModal({ purchaseId, onClose, onSaved }: ReturnFormModa
                           value={qty[item.purchase_detail_id] ?? ""}
                           disabled={remaining <= 0 || item.closing_stock <= 0}
                           onChange={(e) => changeQty(item.purchase_detail_id, e.target.value, remaining, item.closing_stock)}
-                          onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                          onWheel={blurOnWheel}
                           className={`${inputClass} text-center disabled:bg-gray-100 dark:disabled:bg-gray-800`}
                         />
                       </td>
-                      <td className="px-2 py-1.5">{remaining - q}</td>
+                      <td className="px-2 py-1.5">{remaining - returnQty}</td>
                       <td className="px-2 py-1.5 text-right">{formatMoney(item.unit_price)}</td>
-                      <td className="px-2 py-1.5 text-right">{formatMoney(item.unit_price * q)}</td>
+                      <td className="px-2 py-1.5 text-right">{formatMoney(item.unit_price * returnQty)}</td>
                     </tr>
                   );
                 })}
@@ -208,19 +250,25 @@ const cell = "border border-gray-200 px-2 py-1 dark:border-gray-700";
 
 // Return chalan: shown after saving and from Purchase Return Manage
 export function ReturnChalanModal({ returnId, onClose }: { returnId: number | null; onClose: () => void }) {
-  const [data, setData] = useState<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [returnData, setReturnData] = useState<any>(null);
   const printArea = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setData(null);
-    if (returnId) purchaseReturnService.getReturn(returnId).then(setData).catch(() => toast.error("Failed to load return"));
+    setReturnData(null);
+    if (returnId) {
+      purchaseReturnService.getReturn(returnId)
+        .then(setReturnData)
+        .catch(() => toast.error("Failed to load return"));
+    }
   }, [returnId]);
 
-  const print = () => {
-    if (printArea.current) printHtml(data?.return_no ?? "Return", printArea.current.innerHTML, PRINT_STYLE);
-  };
+  function print() {
+    if (printArea.current && returnData) {
+      printHtml(returnData.return_no, printArea.current.innerHTML, PRINT_STYLE);
+    }
+  }
 
-  const r = data;
 
   return (
     <Modal
@@ -231,33 +279,33 @@ export function ReturnChalanModal({ returnId, onClose }: { returnId: number | nu
       footer={
         <>
           <Button type="button" size="sm" variant="outline" onClick={onClose}>Close</Button>
-          <Button type="button" size="sm" onClick={print} disabled={!r}>Print</Button>
+          <Button type="button" size="sm" onClick={print} disabled={!returnData}>Print</Button>
         </>
       }
     >
-      {!r ? (
+      {!returnData ? (
         <p className="py-8 text-center text-sm text-gray-500">Loading...</p>
       ) : (
         <div ref={printArea} className="text-[13px] text-gray-800 dark:text-gray-200">
           <div className="text-center">
-            <h2 className="text-lg font-semibold">{r.company?.name ?? "Purchase Return"}</h2>
-            {r.company?.address && <div className="text-xs text-gray-500">{r.company.address}</div>}
+            <h2 className="text-lg font-semibold">{returnData.company?.name ?? "Purchase Return"}</h2>
+            {returnData.company?.address && <div className="text-xs text-gray-500">{returnData.company.address}</div>}
             <h3 className="mt-1 text-sm">Purchase Return Chalan</h3>
           </div>
 
           <div className="info my-3 flex flex-wrap justify-between gap-6">
             <table>
               <tbody>
-                <tr><td className="pr-3 text-gray-500">Return No</td><td className="font-semibold">{r.return_no}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Return Date</td><td>{formatDate(r.return_date)}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Supplier</td><td>{r.supplier?.name}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Return No</td><td className="font-semibold">{returnData.return_no}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Return Date</td><td>{formatDate(returnData.return_date)}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Supplier</td><td>{returnData.supplier?.name}</td></tr>
               </tbody>
             </table>
             <table>
               <tbody>
-                <tr><td className="pr-3 text-gray-500">PO No</td><td>{r.purchase?.po_no}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Store</td><td>{r.store?.name}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Remarks</td><td>{r.remarks || "-"}</td></tr>
+                <tr><td className="pr-3 text-gray-500">PO No</td><td>{returnData.purchase?.po_no}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Store</td><td>{returnData.store?.name}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Remarks</td><td>{returnData.remarks || "-"}</td></tr>
               </tbody>
             </table>
           </div>
@@ -265,37 +313,43 @@ export function ReturnChalanModal({ returnId, onClose }: { returnId: number | nu
           <table className="items w-full border-collapse text-xs">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-800">
-                {["SL", "Part Number", "Product Name", "Location", "Barcode", "Return Qty", "Unit Price", "Total"].map((h) => (
-                  <th key={h} className={`${cell} text-left font-medium`}>{h}</th>
-                ))}
+                <th className={`${cell} text-left font-medium`}>SL</th>
+                <th className={`${cell} text-left font-medium`}>Part Number</th>
+                <th className={`${cell} text-left font-medium`}>Product Name</th>
+                <th className={`${cell} text-left font-medium`}>Location</th>
+                <th className={`${cell} text-left font-medium`}>Barcode</th>
+                <th className={`${cell} text-left font-medium`}>Return Qty</th>
+                <th className={`${cell} text-left font-medium`}>Unit Price</th>
+                <th className={`${cell} text-left font-medium`}>Total</th>
               </tr>
             </thead>
             <tbody>
-              {r.details.map((d: any, i: number) => (
-                <tr key={d.id}>
-                  <td className={cell}>{i + 1}</td>
-                  <td className={cell}>{d.product?.part_number}</td>
-                  <td className={cell}>{d.product?.name}</td>
-                  <td className={cell}>{d.location?.name}</td>
-                  <td className={cell}>{d.barcode}</td>
-                  <td className={`${cell} text-right`}>{Number(d.return_qty)}</td>
-                  <td className={`${cell} text-right`}>{formatMoney(d.unit_price)}</td>
-                  <td className={`${cell} text-right`}>{formatMoney(d.total_price)}</td>
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              {returnData.details.map((detail: any, index: number) => (
+                <tr key={detail.id}>
+                  <td className={cell}>{index + 1}</td>
+                  <td className={cell}>{detail.product ? detail.product.part_number : ""}</td>
+                  <td className={cell}>{detail.product ? detail.product.name : ""}</td>
+                  <td className={cell}>{detail.location ? detail.location.name : ""}</td>
+                  <td className={cell}>{detail.barcode}</td>
+                  <td className={`${cell} text-right`}>{Number(detail.return_qty)}</td>
+                  <td className={`${cell} text-right`}>{formatMoney(detail.unit_price)}</td>
+                  <td className={`${cell} text-right`}>{formatMoney(detail.total_price)}</td>
                 </tr>
               ))}
               <tr>
                 <td colSpan={7} className={`${cell} text-right font-semibold`}>Total Return Amount</td>
-                <td className={`${cell} text-right font-semibold`}>{formatMoney(r.total_amount)}</td>
+                <td className={`${cell} text-right font-semibold`}>{formatMoney(returnData.total_amount)}</td>
               </tr>
               <tr>
                 <td colSpan={7} className={`${cell} text-right font-semibold`}>Refund Amount</td>
-                <td className={`${cell} text-right font-semibold`}>{formatMoney(r.refund_amount)}</td>
+                <td className={`${cell} text-right font-semibold`}>{formatMoney(returnData.refund_amount)}</td>
               </tr>
             </tbody>
           </table>
 
           <div className="sign mt-14 flex justify-between text-xs">
-            <span className="w-40 border-t border-gray-400 pt-1 text-center">Prepared By: {r.created_by?.name ?? ""}</span>
+            <span className="w-40 border-t border-gray-400 pt-1 text-center">Prepared By: {returnData.created_by?.name ?? ""}</span>
             <span className="w-40 border-t border-gray-400 pt-1 text-center">Received By</span>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { removeEmpty } from "@/lib/options";
 
 export const TRANSFER_STATUS = { PENDING: 0, APPROVED: 1 } as const;
 
@@ -55,9 +56,6 @@ export interface StockTransferRow {
 
 const BASE = "/inventory/stock-transfers";
 
-const clean = (filters: Record<string, string | number>) =>
-  Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "" && v !== undefined && v !== null));
-
 class StockTransferService {
   async searchBarcodes(term: string, companyId: number, exceptId?: number | null): Promise<TransferBarcodeHit[]> {
     const res = await api.get(`${BASE}/search-barcodes`, { params: { term, company_id: companyId, except_id: exceptId || undefined } });
@@ -75,7 +73,7 @@ class StockTransferService {
   }
 
   async getRows(filters: Record<string, string | number> = {}) {
-    const res = await api.get(BASE, { params: clean(filters) });
+    const res = await api.get(BASE, { params: removeEmpty(filters) });
     return res.data.data as { data: StockTransferRow[]; total: number };
   }
 

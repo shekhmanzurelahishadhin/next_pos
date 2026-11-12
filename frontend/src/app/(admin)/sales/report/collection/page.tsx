@@ -1,11 +1,11 @@
 "use client";
-// parts_bazar moneyReceipt/collectionReport: one row per money receipt (MR no) between the dates
-// with the received, discount, VDS and TDS amounts
-import { useCallback, useEffect, useMemo, useState } from "react";
+// Collection Report (parts_bazar moneyReceipt/collectionReport)
+// One row per money receipt (MR no) between the dates, with the received, discount, VDS and TDS amounts.
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
-import { api } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { PAYMENT_TYPES, paymentTypeName } from "@/lib/payment";
+import { apiErrorMessage, filledFields, firstDayOfMonth, labelLines, loadOptions, Option, reportMoney, today } from "@/lib/report";
 import AccessRoute from "@/routes/AccessRoute";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import DatePicker from "@/components/form/date-picker";
@@ -15,84 +15,131 @@ import ReportView, { rptTd, rptTh, rptTotal } from "@/components/report/ReportVi
 import { CustomerPicker } from "@/components/report/ReportPickers";
 import { reportService, CollectionReport } from "@/services/reportService";
 
-type Option = { value: string; label: string };
-type Named = { id: number; name: string };
+type SearchForm = {
+  start_date: string;
+  end_date: string;
+  company_id: string;
+  received_type: string;
+  bank_name: string;
+  customer_id: string;
+};
 
-const today = () => new Date().toISOString().slice(0, 10);
-const monthStart = () => today().slice(0, 8) + "01";
-const emptyForm = () => ({ start_date: monthStart(), end_date: today(), company_id: "", received_type: "", bank_name: "", customer_id: "" });
-
-const money = (n: number) => Math.round(n).toLocaleString("en-US");
+function emptyForm(): SearchForm {
+  return { start_date: firstDayOfMonth(), end_date: today(), company_id: "", received_type: "", bank_name: "", customer_id: "" };
+}
 
 export default function CollectionReportPage() {
-  const [form, setForm] = useState(emptyForm);
-  const [formKey, setFormKey] = useState(0); // new key = fresh date pickers on reset
+  const [form, setForm] = useState<SearchForm>(emptyForm());
+  const [formKey, setFormKey] = useState(0); // changing it gives fresh date pickers on reset
   const [customerText, setCustomerText] = useState("");
   const [companies, setCompanies] = useState<Option[]>([]);
   const [banks, setBanks] = useState<Option[]>([]);
   const [report, setReport] = useState<CollectionReport | null>(null);
-  const [searched, setSearched] = useState<ReturnType<typeof emptyForm> | null>(null);
+  const [searchedForm, setSearchedForm] = useState<SearchForm | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const set = (name: keyof ReturnType<typeof emptyForm>, value: string) => setForm((f) => ({ ...f, [name]: value }));
-
   useEffect(() => {
     document.title = "Collection Report | Multibrand POS";
-    api.get("/configure/companies", { params: { status: 1 } })
-      .then((res) => {
-        const list = res.data.data.data.map((c: Named) => ({ value: String(c.id), label: c.name }));
-        setCompanies(list);
-        if (list.length === 1) setForm((f) => ({ ...f, company_id: list[0].value }));
-      })
-      .catch(() => {});
-    // the bank is saved by name on the money receipt
-    api.get("/configure/lookups", { params: { status: 1, type: "bank_name" } })
-      .then((res) => setBanks(res.data.data.data.map((b: Named) => ({ value: b.name, label: b.name }))))
-      .catch(() => {});
+    loadCompanies();
+    loadBanks();
   }, []);
 
-  // stable functions, so the date pickers are not rebuilt on every render
-  const changeStart = useCallback((_d: Date[], value: string) => setForm((f) => ({ ...f, start_date: value })), []);
-  const changeEnd = useCallback((_d: Date[], value: string) => setForm((f) => ({ ...f, end_date: value })), []);
-
-  const search = async () => {
-    if (!form.start_date || !form.end_date) return setError("Please select date range!");
-    if (form.end_date < form.start_date) return setError("Date To can not be before Date From.");
-    setError("");
+  async function loadCompanies() {
     try {
-      setLoading(true);
-      const params = Object.fromEntries(Object.entries(form).filter(([, v]) => v !== ""));
-      setReport(await reportService.collection(params));
-      setSearched(form);
+      const list = await loadOptions("/configure/companies");
+      setCompanies(list);
+
+      // a company user has only one company, so pick it
+      if (list.length === 1) {
+        setForm((old) => ({ ...old, company_id: list[0].value }));
+      }
+    } catch {
+      // the list is only a filter, the page still works without it
+    }
+  }
+
+  // the bank is saved by name on the money receipt, so the option value is the name
+  async function loadBanks() {
+    try {
+      const list = await loadOptions("/configure/lookups", { type: "bank_name" });
+      const bankOptions: Option[] = [];
+      for (const bank of list) {
+        bankOptions.push({ value: bank.label, label: bank.label });
+      }
+      setBanks(bankOptions);
+    } catch {
+      // the list is only a filter
+    }
+  }
+
+  function setField(name: keyof SearchForm, value: string) {
+    setForm((old) => ({ ...old, [name]: value }));
+  }
+
+  // the date pickers need functions that do not change on every render
+  const changeStartDate = useCallback((_dates: Date[], value: string) => {
+    setForm((old) => ({ ...old, start_date: value }));
+  }, []);
+  const changeEndDate = useCallback((_dates: Date[], value: string) => {
+    setForm((old) => ({ ...old, end_date: value }));
+  }, []);
+
+  async function search() {
+    if (!form.start_date || !form.end_date) {
+      setError("Please select date range!");
+      return;
+    }
+    if (form.end_date < form.start_date) {
+      setError("Date To can not be before Date From.");
+      return;
+    }
+    setError("");
+
+    setLoading(true);
+    try {
+      const result = await reportService.collection(filledFields(form));
+      setReport(result);
+      setSearchedForm(form);
     } catch (err) {
-      toast.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || "Failed to load report");
+      toast.error(apiErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const reset = () => {
-    setForm({ ...emptyForm(), company_id: companies.length === 1 ? companies[0].value : "" });
+  function reset() {
+    const newForm = emptyForm();
+    if (companies.length === 1) {
+      newForm.company_id = companies[0].value;
+    }
+    setForm(newForm);
     setCustomerText("");
     setError("");
-    setFormKey((k) => k + 1);
-  };
+    setFormKey(formKey + 1);
+  }
 
-  const rows = useMemo(() => report?.rows ?? [], [report]);
-  const totals = useMemo(() => ({
-    received: rows.reduce((t, r) => t + r.received_amount, 0),
-    discount: rows.reduce((t, r) => t + r.discount, 0),
-    vds: rows.reduce((t, r) => t + r.vds, 0),
-    tds: rows.reduce((t, r) => t + r.tds, 0),
-    total: rows.reduce((t, r) => t + r.total_amount, 0),
-  }), [rows]);
+  // totals of the report
+  const rows = report ? report.rows : [];
+  let totalReceived = 0;
+  let totalDiscount = 0;
+  let totalVds = 0;
+  let totalTds = 0;
+  let totalAmount = 0;
+  for (const row of rows) {
+    totalReceived += row.received_amount;
+    totalDiscount += row.discount;
+    totalVds += row.vds;
+    totalTds += row.tds;
+    totalAmount += row.total_amount;
+  }
 
-  const lines = searched && report
-    ? [`From ${formatDate(searched.start_date)} To ${formatDate(searched.end_date)}`, ...Object.entries(report.labels).map(([k, v]) => `${k}: ${v}`)]
-    : [];
-
-  const heads = ["SL", "Date", "MR No", "Customer Name", "MR Type", "Bank Name", "Received Amount", "Discount Amount", "VDS Amount", "TDS Amount", "Total Amount"];
+  // lines under the report title
+  const headerLines: string[] = [];
+  if (report && searchedForm) {
+    headerLines.push(`From ${formatDate(searchedForm.start_date)} To ${formatDate(searchedForm.end_date)}`);
+    headerLines.push(...labelLines(report.labels));
+  }
 
   return (
     <AccessRoute requiredPermissions={["collection-report.view"]}>
@@ -101,10 +148,10 @@ export default function CollectionReportPage() {
 
         <ReportSearchCard title="Collection Report" onSearch={search} onReset={reset} loading={loading} error={error}>
           <ReportField label="Date From" required>
-            <DatePicker key={`s${formKey}`} id="rpt_start_date" defaultDate={form.start_date} onChange={changeStart} placeholder="Date from" />
+            <DatePicker key={`start${formKey}`} id="rpt_start_date" defaultDate={form.start_date} onChange={changeStartDate} placeholder="Date from" />
           </ReportField>
           <ReportField label="Date To" required>
-            <DatePicker key={`e${formKey}`} id="rpt_end_date" defaultDate={form.end_date} onChange={changeEnd} placeholder="Date to" />
+            <DatePicker key={`end${formKey}`} id="rpt_end_date" defaultDate={form.end_date} onChange={changeEndDate} placeholder="Date to" />
           </ReportField>
           <ReportField label="Company">
             <ReactSelect
@@ -112,20 +159,36 @@ export default function CollectionReportPage() {
               value={form.company_id || null}
               placeholder="All companies"
               isDisabled={companies.length === 1}
-              onChange={(v) => set("company_id", v ? String(v) : "")}
+              onChange={(value) => setField("company_id", value ? String(value) : "")}
             />
           </ReportField>
           <ReportField label="MR Type">
-            <ReactSelect options={PAYMENT_TYPES} value={form.received_type || null} placeholder="All (no adjustment)" onChange={(v) => set("received_type", v ? String(v) : "")} />
+            <ReactSelect
+              options={PAYMENT_TYPES}
+              value={form.received_type || null}
+              placeholder="All (no adjustment)"
+              onChange={(value) => setField("received_type", value ? String(value) : "")}
+            />
           </ReportField>
           <ReportField label="Bank Name">
-            <ReactSelect options={banks} value={form.bank_name || null} placeholder="All" onChange={(v) => set("bank_name", v ? String(v) : "")} />
+            <ReactSelect
+              options={banks}
+              value={form.bank_name || null}
+              placeholder="All"
+              onChange={(value) => setField("bank_name", value ? String(value) : "")}
+            />
           </ReportField>
           <ReportField label="Customer" className="sm:col-span-2 xl:col-span-1">
             <CustomerPicker
               text={customerText}
-              onText={(t) => { setCustomerText(t); set("customer_id", ""); }}
-              onPick={(id, t) => { setCustomerText(t); set("customer_id", id); }}
+              onText={(text) => {
+                setCustomerText(text);
+                setField("customer_id", ""); // typing again clears the picked customer
+              }}
+              onPick={(id, text) => {
+                setCustomerText(text);
+                setField("customer_id", id);
+              }}
             />
           </ReportField>
         </ReportSearchCard>
@@ -139,43 +202,53 @@ export default function CollectionReportPage() {
         {report && (
           <ReportView
             title="Collection Report"
-            lines={lines}
+            lines={headerLines}
             company={report.company}
             fileName="collection-report"
             rowCount={rows.length}
             summary={[
               { label: "Money Receipts", value: String(rows.length) },
-              { label: "Received", value: money(totals.received), tone: "success" },
-              { label: "Discount", value: money(totals.discount) },
-              { label: "VDS + TDS", value: money(totals.vds + totals.tds) },
-              { label: "Total Amount", value: money(totals.total), tone: "brand" },
+              { label: "Received", value: reportMoney(totalReceived), tone: "success" },
+              { label: "Discount", value: reportMoney(totalDiscount) },
+              { label: "VDS + TDS", value: reportMoney(totalVds + totalTds) },
+              { label: "Total Amount", value: reportMoney(totalAmount), tone: "brand" },
             ]}
           >
             <table className="rpt-table w-full border-collapse text-xs">
               <thead>
                 <tr>
-                  {heads.map((h, i) => (
-                    <th key={h} className={`${rptTh} ${i >= 6 ? "num text-right" : "text-left"}`}>{h}</th>
-                  ))}
+                  <th className={`${rptTh} text-left`}>SL</th>
+                  <th className={`${rptTh} text-left`}>Date</th>
+                  <th className={`${rptTh} text-left`}>MR No</th>
+                  <th className={`${rptTh} text-left`}>Customer Name</th>
+                  <th className={`${rptTh} text-left`}>MR Type</th>
+                  <th className={`${rptTh} text-left`}>Bank Name</th>
+                  <th className={`${rptTh} num text-right`}>Received Amount</th>
+                  <th className={`${rptTh} num text-right`}>Discount Amount</th>
+                  <th className={`${rptTh} num text-right`}>VDS Amount</th>
+                  <th className={`${rptTh} num text-right`}>TDS Amount</th>
+                  <th className={`${rptTh} num text-right`}>Total Amount</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 && (
-                  <tr><td colSpan={heads.length} className={`${rptTd} center py-6 text-center text-gray-400`}>No result found!</td></tr>
+                  <tr>
+                    <td colSpan={11} className={`${rptTd} center py-6 text-center text-gray-400`}>No result found!</td>
+                  </tr>
                 )}
-                {rows.map((r, i) => (
-                  <tr key={r.mr_no} className="even:bg-gray-50/60 hover:bg-brand-50/40 dark:even:bg-white/[0.02] dark:hover:bg-white/[0.04]">
-                    <td className={`${rptTd} center text-center text-gray-500`}>{i + 1}</td>
-                    <td className={`${rptTd} whitespace-nowrap`}>{formatDate(r.receipt_date)}</td>
-                    <td className={`${rptTd} whitespace-nowrap font-medium text-gray-800 dark:text-white/90`}>{r.mr_no}</td>
-                    <td className={`${rptTd} min-w-[150px]`}>{r.customer_name}</td>
-                    <td className={`${rptTd} whitespace-nowrap`}>{paymentTypeName(r.received_type ?? "1")}</td>
-                    <td className={rptTd}>{r.bank_name}</td>
-                    <td className={`${rptTd} num text-right font-semibold text-success-600 dark:text-success-400`}>{money(r.received_amount)}</td>
-                    <td className={`${rptTd} num text-right ${r.discount ? "" : "text-gray-400"}`}>{money(r.discount)}</td>
-                    <td className={`${rptTd} num text-right ${r.vds ? "" : "text-gray-400"}`}>{money(r.vds)}</td>
-                    <td className={`${rptTd} num text-right ${r.tds ? "" : "text-gray-400"}`}>{money(r.tds)}</td>
-                    <td className={`${rptTd} num text-right font-semibold`}>{money(r.total_amount)}</td>
+                {rows.map((row, index) => (
+                  <tr key={row.mr_no} className="even:bg-gray-50/60 hover:bg-brand-50/40 dark:even:bg-white/[0.02] dark:hover:bg-white/[0.04]">
+                    <td className={`${rptTd} center text-center text-gray-500`}>{index + 1}</td>
+                    <td className={`${rptTd} whitespace-nowrap`}>{formatDate(row.receipt_date)}</td>
+                    <td className={`${rptTd} whitespace-nowrap font-medium text-gray-800 dark:text-white/90`}>{row.mr_no}</td>
+                    <td className={`${rptTd} min-w-[150px]`}>{row.customer_name}</td>
+                    <td className={`${rptTd} whitespace-nowrap`}>{paymentTypeName(row.received_type || "1")}</td>
+                    <td className={rptTd}>{row.bank_name}</td>
+                    <td className={`${rptTd} num text-right font-semibold text-success-600 dark:text-success-400`}>{reportMoney(row.received_amount)}</td>
+                    <td className={`${rptTd} num text-right ${row.discount ? "" : "text-gray-400"}`}>{reportMoney(row.discount)}</td>
+                    <td className={`${rptTd} num text-right ${row.vds ? "" : "text-gray-400"}`}>{reportMoney(row.vds)}</td>
+                    <td className={`${rptTd} num text-right ${row.tds ? "" : "text-gray-400"}`}>{reportMoney(row.tds)}</td>
+                    <td className={`${rptTd} num text-right font-semibold`}>{reportMoney(row.total_amount)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -183,11 +256,11 @@ export default function CollectionReportPage() {
                 <tfoot>
                   <tr className={rptTotal}>
                     <td colSpan={6} className={`${rptTd} num text-right`}>Total</td>
-                    <td className={`${rptTd} num text-right`}>{money(totals.received)}</td>
-                    <td className={`${rptTd} num text-right`}>{money(totals.discount)}</td>
-                    <td className={`${rptTd} num text-right`}>{money(totals.vds)}</td>
-                    <td className={`${rptTd} num text-right`}>{money(totals.tds)}</td>
-                    <td className={`${rptTd} num text-right`}>{money(totals.total)}</td>
+                    <td className={`${rptTd} num text-right`}>{reportMoney(totalReceived)}</td>
+                    <td className={`${rptTd} num text-right`}>{reportMoney(totalDiscount)}</td>
+                    <td className={`${rptTd} num text-right`}>{reportMoney(totalVds)}</td>
+                    <td className={`${rptTd} num text-right`}>{reportMoney(totalTds)}</td>
+                    <td className={`${rptTd} num text-right`}>{reportMoney(totalAmount)}</td>
                   </tr>
                 </tfoot>
               )}

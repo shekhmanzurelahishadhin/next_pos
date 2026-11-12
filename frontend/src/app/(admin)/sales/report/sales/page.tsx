@@ -1,10 +1,12 @@
 "use client";
-// parts_bazar sellItems/sellReport: every line of the approved sales between the dates,
-// the order no, date, customer and grand total are merged over the lines of one order
-import { useCallback, useEffect, useMemo, useState } from "react";
+// Sales Report (parts_bazar sellItems/sellReport)
+// Every line of the approved sales between the dates.
+// The order no, date, customer and grand total are merged over the lines of one order.
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { api } from "@/lib/api";
 import { formatDate } from "@/lib/format";
+import { apiErrorMessage, filledFields, firstDayOfMonth, labelLines, loadOptions, Option, reportMoney, reportQty, today } from "@/lib/report";
 import AccessRoute from "@/routes/AccessRoute";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import DatePicker from "@/components/form/date-picker";
@@ -14,100 +16,138 @@ import ReportView, { groupSpans, rptTd, rptTh, rptTotal } from "@/components/rep
 import { CustomerPicker, ProductPicker } from "@/components/report/ReportPickers";
 import { reportService, SalesReport } from "@/services/reportService";
 
-type Option = { value: string; label: string; category_id?: string };
-type Named = { id: number; name: string; category_id?: number };
+type SubCategoryOption = Option & { category_id: string };
 
-const today = () => new Date().toISOString().slice(0, 10);
-const monthStart = () => today().slice(0, 8) + "01";
-const emptyForm = () => ({
-  start_date: monthStart(), end_date: today(), customer_id: "", category_id: "", sub_category_id: "", product_id: "", barcode: "",
-});
+type SearchForm = {
+  start_date: string;
+  end_date: string;
+  customer_id: string;
+  category_id: string;
+  sub_category_id: string;
+  product_id: string;
+  barcode: string;
+};
 
-const money = (n: number) => Math.round(n).toLocaleString("en-US");
-const qty = (n: number) => Number(n.toFixed(2)).toLocaleString("en-US");
+function emptyForm(): SearchForm {
+  return {
+    start_date: firstDayOfMonth(),
+    end_date: today(),
+    customer_id: "",
+    category_id: "",
+    sub_category_id: "",
+    product_id: "",
+    barcode: "",
+  };
+}
 
 export default function SalesReportPage() {
-  const [form, setForm] = useState(emptyForm);
-  const [formKey, setFormKey] = useState(0); // new key = fresh date pickers on reset
+  const [form, setForm] = useState<SearchForm>(emptyForm());
+  const [formKey, setFormKey] = useState(0); // changing it gives fresh date pickers on reset
   const [customerText, setCustomerText] = useState("");
   const [productText, setProductText] = useState("");
   const [categories, setCategories] = useState<Option[]>([]);
-  const [subCategories, setSubCategories] = useState<Option[]>([]);
+  const [subCategories, setSubCategories] = useState<SubCategoryOption[]>([]);
   const [report, setReport] = useState<SalesReport | null>(null);
-  const [searched, setSearched] = useState<ReturnType<typeof emptyForm> | null>(null);
+  const [searchedForm, setSearchedForm] = useState<SearchForm | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const set = (name: keyof ReturnType<typeof emptyForm>, value: string) => setForm((f) => ({ ...f, [name]: value }));
-
   useEffect(() => {
     document.title = "Sales Report | Multibrand POS";
-    api.get("/configure/categories", { params: { status: 1 } })
-      .then((res) => setCategories(res.data.data.data.map((c: Named) => ({ value: String(c.id), label: c.name }))))
-      .catch(() => {});
-    api.get("/configure/sub-categories", { params: { status: 1 } })
-      .then((res) => setSubCategories(res.data.data.data.map((s: Named) => ({ value: String(s.id), label: s.name, category_id: String(s.category_id) }))))
-      .catch(() => {});
+    loadOptions("/configure/categories").then(setCategories).catch(() => {});
+    loadSubCategories();
   }, []);
 
-  // sub categories of the picked category, like parts_bazar
-  const categorySubs = useMemo(
-    () => (form.category_id ? subCategories.filter((s) => s.category_id === form.category_id) : subCategories),
-    [subCategories, form.category_id]
-  );
-
-  // stable functions, so the date pickers are not rebuilt on every render
-  const changeStart = useCallback((_d: Date[], value: string) => setForm((f) => ({ ...f, start_date: value })), []);
-  const changeEnd = useCallback((_d: Date[], value: string) => setForm((f) => ({ ...f, end_date: value })), []);
-
-  const search = async () => {
-    if (!form.start_date || !form.end_date) return setError("Please select date range!");
-    if (form.end_date < form.start_date) return setError("Date To can not be before Date From.");
-    setError("");
+  async function loadSubCategories() {
     try {
-      setLoading(true);
-      const params = Object.fromEntries(Object.entries(form).filter(([, v]) => v !== ""));
-      setReport(await reportService.sales(params));
-      setSearched(form);
+      const res = await api.get("/configure/sub-categories", { params: { status: 1 } });
+      const list: SubCategoryOption[] = [];
+      for (const subCategory of res.data.data.data) {
+        list.push({ value: String(subCategory.id), label: subCategory.name, category_id: String(subCategory.category_id) });
+      }
+      setSubCategories(list);
+    } catch {
+      // the list is only a filter
+    }
+  }
+
+  function setField(name: keyof SearchForm, value: string) {
+    setForm((old) => ({ ...old, [name]: value }));
+  }
+
+  // the date pickers need functions that do not change on every render
+  const changeStartDate = useCallback((_dates: Date[], value: string) => {
+    setForm((old) => ({ ...old, start_date: value }));
+  }, []);
+  const changeEndDate = useCallback((_dates: Date[], value: string) => {
+    setForm((old) => ({ ...old, end_date: value }));
+  }, []);
+
+  async function search() {
+    if (!form.start_date || !form.end_date) {
+      setError("Please select date range!");
+      return;
+    }
+    if (form.end_date < form.start_date) {
+      setError("Date To can not be before Date From.");
+      return;
+    }
+    setError("");
+
+    setLoading(true);
+    try {
+      const result = await reportService.sales(filledFields(form));
+      setReport(result);
+      setSearchedForm(form);
     } catch (err) {
-      toast.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || "Failed to load report");
+      toast.error(apiErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const reset = () => {
+  function reset() {
     setForm(emptyForm());
     setCustomerText("");
     setProductText("");
     setError("");
-    setFormKey((k) => k + 1);
-  };
+    setFormKey(formKey + 1);
+  }
 
-  const rows = useMemo(() => report?.rows ?? [], [report]);
+  // sub categories of the picked category, like parts_bazar
+  let categorySubCategories = subCategories;
+  if (form.category_id) {
+    categorySubCategories = subCategories.filter((subCategory) => subCategory.category_id === form.category_id);
+  }
+
+  const rows = report ? report.rows : [];
 
   // the first line of an order gets the merged cells
-  const orderSpan = useMemo(() => groupSpans(rows, (r) => r.sale_id), [rows]);
+  const orderSpans = groupSpans(rows, (row) => row.sale_id);
 
-  const totals = useMemo(() => {
-    const orders = new Map(rows.map((r) => [r.sale_id, r.grand_total]));
-    return {
-      orders: orders.size,
-      qty: rows.reduce((t, r) => t + r.qty, 0),
-      discount: rows.reduce((t, r) => t + r.discount, 0),
-      lineTotal: rows.reduce((t, r) => t + r.total_amount, 0),
-      grandTotal: [...orders.values()].reduce((t, v) => t + v, 0),
-    };
-  }, [rows]);
+  // totals; the grand total is counted once for each order
+  let totalQty = 0;
+  let totalDiscount = 0;
+  let totalLineAmount = 0;
+  let totalGrand = 0;
+  let orderCount = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    totalQty += row.qty;
+    totalDiscount += row.discount;
+    totalLineAmount += row.total_amount;
+    if (orderSpans[i]) {
+      orderCount++;
+      totalGrand += row.grand_total;
+    }
+  }
 
-  const lines = searched && report
-    ? [
-        `From ${formatDate(searched.start_date)} To ${formatDate(searched.end_date)}`,
-        ...Object.entries(report.labels).map(([k, v]) => `${k}: ${v}`),
-      ]
-    : [];
-
-  const heads = ["SL", "Order No", "Order Date", "Customer Name", "Product Name", "Part Number", "Barcode", "Sales Qty", "Unit Price", "Discount", "Line Total", "Grand Total"];
+  // lines under the report title
+  const headerLines: string[] = [];
+  if (report && searchedForm) {
+    headerLines.push(`From ${formatDate(searchedForm.start_date)} To ${formatDate(searchedForm.end_date)}`);
+    headerLines.push(...labelLines(report.labels));
+  }
 
   return (
     <AccessRoute requiredPermissions={["sales-report.view"]}>
@@ -116,16 +156,22 @@ export default function SalesReportPage() {
 
         <ReportSearchCard title="Sales Report" onSearch={search} onReset={reset} loading={loading} error={error}>
           <ReportField label="Date From" required>
-            <DatePicker key={`s${formKey}`} id="rpt_start_date" defaultDate={form.start_date} onChange={changeStart} placeholder="Date from" />
+            <DatePicker key={`start${formKey}`} id="rpt_start_date" defaultDate={form.start_date} onChange={changeStartDate} placeholder="Date from" />
           </ReportField>
           <ReportField label="Date To" required>
-            <DatePicker key={`e${formKey}`} id="rpt_end_date" defaultDate={form.end_date} onChange={changeEnd} placeholder="Date to" />
+            <DatePicker key={`end${formKey}`} id="rpt_end_date" defaultDate={form.end_date} onChange={changeEndDate} placeholder="Date to" />
           </ReportField>
           <ReportField label="Customer" className="sm:col-span-2">
             <CustomerPicker
               text={customerText}
-              onText={(t) => { setCustomerText(t); set("customer_id", ""); }}
-              onPick={(id, t) => { setCustomerText(t); set("customer_id", id); }}
+              onText={(text) => {
+                setCustomerText(text);
+                setField("customer_id", ""); // typing again clears the picked customer
+              }}
+              onPick={(id, text) => {
+                setCustomerText(text);
+                setField("customer_id", id);
+              }}
             />
           </ReportField>
           <ReportField label="Category">
@@ -133,21 +179,41 @@ export default function SalesReportPage() {
               options={categories}
               value={form.category_id || null}
               placeholder="All"
-              onChange={(v) => setForm((f) => ({ ...f, category_id: v ? String(v) : "", sub_category_id: "" }))}
+              onChange={(value) => {
+                // a new category clears the sub category
+                setForm((old) => ({ ...old, category_id: value ? String(value) : "", sub_category_id: "" }));
+              }}
             />
           </ReportField>
           <ReportField label="Sub-Category">
-            <ReactSelect options={categorySubs} value={form.sub_category_id || null} placeholder="All" onChange={(v) => set("sub_category_id", v ? String(v) : "")} />
+            <ReactSelect
+              options={categorySubCategories}
+              value={form.sub_category_id || null}
+              placeholder="All"
+              onChange={(value) => setField("sub_category_id", value ? String(value) : "")}
+            />
           </ReportField>
           <ReportField label="Product (name / part number)" className="sm:col-span-2">
             <ProductPicker
               text={productText}
-              onText={(t) => { setProductText(t); set("product_id", ""); }}
-              onPick={(id, t) => { setProductText(t); set("product_id", id); }}
+              onText={(text) => {
+                setProductText(text);
+                setField("product_id", "");
+              }}
+              onPick={(id, text) => {
+                setProductText(text);
+                setField("product_id", id);
+              }}
             />
           </ReportField>
           <ReportField label="Barcode">
-            <input type="text" value={form.barcode} onChange={(e) => set("barcode", e.target.value.trim())} placeholder="Exact barcode" className={reportInputClass} />
+            <input
+              type="text"
+              value={form.barcode}
+              onChange={(e) => setField("barcode", e.target.value.trim())}
+              placeholder="Exact barcode"
+              className={reportInputClass}
+            />
           </ReportField>
         </ReportSearchCard>
 
@@ -160,51 +226,62 @@ export default function SalesReportPage() {
         {report && (
           <ReportView
             title="Sales Report"
-            lines={lines}
+            lines={headerLines}
             company={report.company}
             fileName="sales-report"
             rowCount={rows.length}
             summary={[
-              { label: "Orders", value: String(totals.orders) },
-              { label: "Sales Qty", value: qty(totals.qty) },
-              { label: "Line Discount", value: money(totals.discount), tone: "error" },
-              { label: "Line Total", value: money(totals.lineTotal) },
-              { label: "Grand Total", value: money(totals.grandTotal), tone: "brand" },
+              { label: "Orders", value: String(orderCount) },
+              { label: "Sales Qty", value: reportQty(totalQty) },
+              { label: "Line Discount", value: reportMoney(totalDiscount), tone: "error" },
+              { label: "Line Total", value: reportMoney(totalLineAmount) },
+              { label: "Grand Total", value: reportMoney(totalGrand), tone: "brand" },
             ]}
           >
             <table className="rpt-table w-full border-collapse text-xs">
               <thead>
                 <tr>
-                  {heads.map((h, i) => (
-                    <th key={h} className={`${rptTh} ${i >= 7 ? "num text-right" : "text-left"}`}>{h}</th>
-                  ))}
+                  <th className={`${rptTh} text-left`}>SL</th>
+                  <th className={`${rptTh} text-left`}>Order No</th>
+                  <th className={`${rptTh} text-left`}>Order Date</th>
+                  <th className={`${rptTh} text-left`}>Customer Name</th>
+                  <th className={`${rptTh} text-left`}>Product Name</th>
+                  <th className={`${rptTh} text-left`}>Part Number</th>
+                  <th className={`${rptTh} text-left`}>Barcode</th>
+                  <th className={`${rptTh} num text-right`}>Sales Qty</th>
+                  <th className={`${rptTh} num text-right`}>Unit Price</th>
+                  <th className={`${rptTh} num text-right`}>Discount</th>
+                  <th className={`${rptTh} num text-right`}>Line Total</th>
+                  <th className={`${rptTh} num text-right`}>Grand Total</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 && (
-                  <tr><td colSpan={heads.length} className={`${rptTd} center py-6 text-center text-gray-400`}>No result found!</td></tr>
+                  <tr>
+                    <td colSpan={12} className={`${rptTd} center py-6 text-center text-gray-400`}>No result found!</td>
+                  </tr>
                 )}
-                {rows.map((r, i) => {
-                  const span = orderSpan[i];
+                {rows.map((row, index) => {
+                  const span = orderSpans[index]; // only set on the first line of an order
                   return (
-                    <tr key={r.id} className="hover:bg-brand-50/40 dark:hover:bg-white/[0.04]">
-                      <td className={`${rptTd} center text-center text-gray-500`}>{i + 1}</td>
+                    <tr key={row.id} className="hover:bg-brand-50/40 dark:hover:bg-white/[0.04]">
+                      <td className={`${rptTd} center text-center text-gray-500`}>{index + 1}</td>
                       {span && (
                         <>
-                          <td rowSpan={span} className={`${rptTd} whitespace-nowrap align-top font-medium text-gray-800 dark:text-white/90`}>{r.so_no}</td>
-                          <td rowSpan={span} className={`${rptTd} whitespace-nowrap align-top`}>{formatDate(r.order_date)}</td>
-                          <td rowSpan={span} className={`${rptTd} min-w-[130px] align-top`}>{r.customer_name}</td>
+                          <td rowSpan={span} className={`${rptTd} whitespace-nowrap align-top font-medium text-gray-800 dark:text-white/90`}>{row.so_no}</td>
+                          <td rowSpan={span} className={`${rptTd} whitespace-nowrap align-top`}>{formatDate(row.order_date)}</td>
+                          <td rowSpan={span} className={`${rptTd} min-w-[130px] align-top`}>{row.customer_name}</td>
                         </>
                       )}
-                      <td className={`${rptTd} min-w-[130px]`}>{r.product_name}</td>
-                      <td className={`${rptTd} whitespace-nowrap`}>{r.part_number}</td>
-                      <td className={`${rptTd} whitespace-nowrap`}>{r.barcode}</td>
-                      <td className={`${rptTd} num text-right`}>{qty(r.qty)}</td>
-                      <td className={`${rptTd} num text-right`}>{money(r.sell_price)}</td>
-                      <td className={`${rptTd} num text-right ${r.discount ? "text-error-600 dark:text-error-400" : "text-gray-400"}`}>{money(r.discount)}</td>
-                      <td className={`${rptTd} num text-right`}>{money(r.total_amount)}</td>
+                      <td className={`${rptTd} min-w-[130px]`}>{row.product_name}</td>
+                      <td className={`${rptTd} whitespace-nowrap`}>{row.part_number}</td>
+                      <td className={`${rptTd} whitespace-nowrap`}>{row.barcode}</td>
+                      <td className={`${rptTd} num text-right`}>{reportQty(row.qty)}</td>
+                      <td className={`${rptTd} num text-right`}>{reportMoney(row.sell_price)}</td>
+                      <td className={`${rptTd} num text-right ${row.discount ? "text-error-600 dark:text-error-400" : "text-gray-400"}`}>{reportMoney(row.discount)}</td>
+                      <td className={`${rptTd} num text-right`}>{reportMoney(row.total_amount)}</td>
                       {span && (
-                        <td rowSpan={span} className={`${rptTd} num align-top text-right font-semibold text-gray-800 dark:text-white/90`}>{money(r.grand_total)}</td>
+                        <td rowSpan={span} className={`${rptTd} num align-top text-right font-semibold text-gray-800 dark:text-white/90`}>{reportMoney(row.grand_total)}</td>
                       )}
                     </tr>
                   );
@@ -214,11 +291,11 @@ export default function SalesReportPage() {
                 <tfoot>
                   <tr className={rptTotal}>
                     <td colSpan={7} className={`${rptTd} num text-right`}>Total</td>
-                    <td className={`${rptTd} num text-right`}>{qty(totals.qty)}</td>
+                    <td className={`${rptTd} num text-right`}>{reportQty(totalQty)}</td>
                     <td className={rptTd}></td>
-                    <td className={`${rptTd} num text-right`}>{money(totals.discount)}</td>
-                    <td className={`${rptTd} num text-right`}>{money(totals.lineTotal)}</td>
-                    <td className={`${rptTd} num text-right`}>{money(totals.grandTotal)}</td>
+                    <td className={`${rptTd} num text-right`}>{reportMoney(totalDiscount)}</td>
+                    <td className={`${rptTd} num text-right`}>{reportMoney(totalLineAmount)}</td>
+                    <td className={`${rptTd} num text-right`}>{reportMoney(totalGrand)}</td>
                   </tr>
                 </tfoot>
               )}

@@ -1,9 +1,5 @@
 import { api } from "@/lib/api";
 
-// Simple in-memory cache
-const cache = new Map();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-
 export interface Supplier {
     id: number;
     name: string;
@@ -46,36 +42,8 @@ export interface SupplierFilters {
 }
 
 class SupplierService {
-    private getCacheKey(filters: SupplierFilters): string {
-        return `suppliers_${JSON.stringify(filters)}`;
-    }
-
-    private setCache(key: string, data: any): void {
-        cache.set(key, {
-            data,
-            timestamp: Date.now()
-        });
-    }
-
-    private getCache(key: string): any {
-        const cached = cache.get(key);
-        // check expiration
-        if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
-            return cached.data;
-        }
-        cache.delete(key); // expired → delete it
-        return null;
-    }
-
     async getSuppliers(filters: SupplierFilters = {}): Promise<PaginatedResponse<Supplier>> {
-        // Don't cache searches
-        // if (!filters.search) {
-        //   const cacheKey = this.getCacheKey(filters);
-        //   const cached = this.getCache(cacheKey);
-        //   console.log('RoleService.getRoles - cacheKey:', cacheKey, 'cached:', cached);
-        //   if (cached) return cached;
-        // }
-
+        // only the filled filters go to the API
         const params = new URLSearchParams();
 
         // Common filter fields
@@ -96,9 +64,7 @@ class SupplierService {
         if (filters.updated_at) params.append('updated_at', filters.updated_at);
 
         const response = await api.get(`/purchase/suppliers?${params}`);
-        const result = response.data.data;
-
-        return result;
+        return response.data.data;
     }
 
     async createSupplier(supplierData: { name: string, code: string, email: string, phone: string, address: string, opening_balance_type: number, opening_balance: number }): Promise<Supplier> {

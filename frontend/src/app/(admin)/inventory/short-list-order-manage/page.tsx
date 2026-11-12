@@ -12,8 +12,8 @@ import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import ComponentCard from "@/components/common/ComponentCard";
 import { DataTable } from "@/components/tables/DataTable";
 import ActionButtons from "@/components/ui/button/ActionButton";
-import { api } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/format";
+import { apiErrorMessage, loadOptions, Option } from "@/lib/options";
 import { shortListOrderService, ShortListRow } from "@/services/shortListOrderService";
 import { ShortListReportModal } from "../components/ShortListReport";
 
@@ -26,7 +26,7 @@ export default function ShortListOrderManage() {
   const [rows, setRows] = useState<ShortListRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [stores, setStores] = useState<{ value: string; label: string }[]>([]);
+  const [stores, setStores] = useState<Option[]>([]);
   const [filters, setFilters] = useState<Record<string, string | number>>({});
   const debouncedFilters = useDebounce(filters, 300);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 });
@@ -51,8 +51,8 @@ export default function ShortListOrderManage() {
 
   useEffect(() => {
     document.title = "Manage Short List Order | Multibrand POS";
-    api.get("/configure/stores", { params: { status: 1 } })
-      .then((res) => setStores(res.data.data.data.map((s: any) => ({ value: String(s.id), label: s.name }))))
+    loadOptions("/configure/stores")
+      .then(setStores)
       .catch(() => {});
   }, []);
 
@@ -63,18 +63,23 @@ export default function ShortListOrderManage() {
 
   const remove = useCallback(async (row: ShortListRow) => {
     const result = await confirm({ title: "Delete Short List?", text: `Are you sure you want to delete all products under SL No: ${row.max_sl_no}?` });
-    if (!result.isConfirmed) return;
+    if (!result.isConfirmed) {
+      return;
+    }
     try {
       await shortListOrderService.deleteList(row.max_sl_no);
       toast.success(`Short list ${row.max_sl_no} deleted`);
       load();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Failed to delete short list");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Failed to delete short list"));
     }
   }, [confirm, load]);
 
   const columns = useMemo((): ColumnDef<ShortListRow>[] => {
-    const byList = (row: ShortListRow) => row.max_sl_no;
+    // the rows of one list are merged in these columns
+    function byList(row: ShortListRow) {
+      return row.max_sl_no;
+    }
     return [
       {
         id: "max_sl_no",

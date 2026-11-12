@@ -34,10 +34,16 @@ class Inventory extends Model
     // Current stock of a product, optionally at one store / location
     public static function closingStock(int $productId, ?int $storeId = null, ?int $locationId = null): float
     {
-        return (float) self::where('product_id', $productId)
-            ->when($storeId, fn($q) => $q->where('store_id', $storeId))
-            ->when($locationId, fn($q) => $q->where('location_id', $locationId))
-            ->selectRaw('COALESCE(SUM(stock_in - stock_out), 0) as stock')
-            ->value('stock');
+        $query = self::where('product_id', $productId);
+
+        if ($storeId) {
+            $query->where('store_id', $storeId);
+        }
+        if ($locationId) {
+            $query->where('location_id', $locationId);
+        }
+
+        $stock = $query->selectRaw('COALESCE(SUM(stock_in - stock_out), 0) as stock')->value('stock');
+        return (float) $stock;
     }
 }

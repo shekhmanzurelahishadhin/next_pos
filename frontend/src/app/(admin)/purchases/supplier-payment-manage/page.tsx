@@ -13,6 +13,7 @@ import ComponentCard from "@/components/common/ComponentCard";
 import { DataTable } from "@/components/tables/DataTable";
 import ActionButtons from "@/components/ui/button/ActionButton";
 import { formatDate, formatMoney } from "@/lib/format";
+import { apiErrorMessage } from "@/lib/options";
 import { PAYMENT_TYPES, paymentTypeName } from "@/lib/payment";
 import { supplierPaymentService, SpRow } from "@/services/supplierPaymentService";
 import { SupplierPaymentVoucherModal, poLabel } from "../components/SupplierPaymentModals";
@@ -64,8 +65,8 @@ export default function ManageSupplierPaymentPage() {
       await supplierPaymentService.deletePayment(row.sl_no);
       toast.success(`${row.sl_no} deleted`);
       load();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Failed to delete supplier payment");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Failed to delete supplier payment"));
     }
   }, [confirm, load]);
 

@@ -22,35 +22,40 @@ class PurchaseReturnController extends Controller
     // Purchase Return Manage: one row per returned item
     public function index(Request $request)
     {
-        $rows = $this->service->getReturnRows(
-            $request->only('return_no', 'po_no', 'supplier_name', 'store_id', 'location_name', 'product_name', 'part_number'),
-            $request->get('per_page')
-        );
+        $filters = $request->only('return_no', 'po_no', 'supplier_name', 'store_id', 'location_name', 'product_name', 'part_number');
+        $rows = $this->service->getReturnRows($filters, $request->get('per_page'));
+
         return ApiResponse::success(['data' => $rows->items(), 'total' => $rows->total()], 'Purchase returns retrieve successfully');
     }
 
     // Purchase Return page: items of approved POs
     public function returnable(Request $request)
     {
-        $rows = $this->service->getReturnableRows(
-            $request->only('po_no', 'supplier_name', 'store_id', 'location_name', 'product_name', 'part_number'),
-            $request->get('per_page')
-        );
+        $filters = $request->only('po_no', 'supplier_name', 'store_id', 'location_name', 'product_name', 'part_number');
+        $rows = $this->service->getReturnableRows($filters, $request->get('per_page'));
+
         return ApiResponse::success(['data' => $rows->items(), 'total' => $rows->total()], 'Returnable items retrieve successfully');
     }
 
     public function form(Purchase $purchase)
     {
-        return $this->run(fn() => $this->service->returnForm($purchase), 'Return form');
+        try {
+            return ApiResponse::success($this->service->returnForm($purchase), 'Return form');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function store(PurchaseReturnRequest $request)
     {
         $purchase = Purchase::findOrFail($request->purchase_id);
-        return $this->run(function () use ($purchase, $request) {
+
+        try {
             $return = $this->service->createReturn($purchase, $request->validated());
-            return ['id' => $return->id, 'return_no' => $return->return_no];
-        }, 'Successfully Returned', 201);
+            return ApiResponse::success(['id' => $return->id, 'return_no' => $return->return_no], 'Successfully Returned', 201);
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function show(int $id)
@@ -60,19 +65,23 @@ class PurchaseReturnController extends Controller
 
     public function destroy(PurchaseReturn $purchaseReturn)
     {
-        return $this->run(fn() => $this->service->deleteReturn($purchaseReturn), 'Purchase return deleted successfully');
+        try {
+            $this->service->deleteReturn($purchaseReturn);
+            return ApiResponse::success(null, 'Purchase return deleted successfully');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
-    // business rule errors go back as 422 with the message
-    private function run(callable $action, string $message, int $code = 200)
+    // A business rule error goes back as 422 with its message,
+    // any other error is logged and a general message is sent
+    private function errorResponse(\Exception $e)
     {
-        try {
-            return ApiResponse::success($action(), $message, $code);
-        } catch (\RuntimeException $e) {
+        if ($e instanceof \RuntimeException) {
             return ApiResponse::error($e->getMessage(), 422);
-        } catch (\Exception $e) {
-            report($e);
-            return ApiResponse::serverError('Something went wrong, please try again');
         }
+
+        report($e);
+        return ApiResponse::serverError('Something went wrong, please try again');
     }
 }

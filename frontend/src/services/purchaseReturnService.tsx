@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { removeEmpty } from "@/lib/options";
 
 // "Purchase Return" page row: one item of an approved PO
 export interface ReturnableRow {
@@ -72,12 +73,10 @@ export interface ReturnRow {
 
 const BASE = "/purchase/purchase-returns";
 
-const clean = (filters: Record<string, string | number>) =>
-  Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "" && v !== undefined && v !== null));
 
 class PurchaseReturnService {
   async getReturnable(filters: Record<string, string | number> = {}) {
-    const res = await api.get(`${BASE}/returnable`, { params: clean(filters) });
+    const res = await api.get(`${BASE}/returnable`, { params: removeEmpty(filters) });
     return res.data.data as { data: ReturnableRow[]; total: number };
   }
 
@@ -92,7 +91,7 @@ class PurchaseReturnService {
   }
 
   async getReturns(filters: Record<string, string | number> = {}) {
-    const res = await api.get(BASE, { params: clean(filters) });
+    const res = await api.get(BASE, { params: removeEmpty(filters) });
     return res.data.data as { data: ReturnRow[]; total: number };
   }
 

@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { removeEmpty } from "@/lib/options";
 
 // One stock in / out row (Inventory Stock page)
 export interface StockRow {
@@ -49,17 +50,14 @@ export const ENTRY_POINTS = [
 
 export const entryPointName = (value: string) => ENTRY_POINTS.find((e) => e.value === value)?.label ?? value;
 
-const clean = (filters: Record<string, string | number>) =>
-  Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "" && v !== undefined && v !== null));
-
 class InventoryService {
   async getStock(filters: Record<string, string | number> = {}) {
-    const res = await api.get("/inventory/stock", { params: clean(filters) });
+    const res = await api.get("/inventory/stock", { params: removeEmpty(filters) });
     return res.data.data as { data: StockRow[]; total: number };
   }
 
   async getBarcodes(filters: Record<string, string | number> = {}) {
-    const res = await api.get("/inventory/barcodes", { params: clean(filters) });
+    const res = await api.get("/inventory/barcodes", { params: removeEmpty(filters) });
     return res.data.data as { data: BarcodeRow[]; total: number };
   }
 }

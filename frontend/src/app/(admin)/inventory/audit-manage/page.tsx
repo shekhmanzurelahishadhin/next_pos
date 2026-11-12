@@ -12,12 +12,10 @@ import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import ComponentCard from "@/components/common/ComponentCard";
 import { DataTable } from "@/components/tables/DataTable";
 import ActionButtons from "@/components/ui/button/ActionButton";
-import { api } from "@/lib/api";
 import { formatDate } from "@/lib/format";
+import { apiErrorMessage, loadOptions, Option } from "@/lib/options";
 import { inventoryAuditService, InventoryAuditRow } from "@/services/inventoryAuditService";
 import { InventoryAuditViewModal } from "../components/InventoryAuditView";
-
-type Option = { value: string; label: string };
 
 // parts_bazar inventoryAudit/admin with the counts added: one row per audit
 export default function InventoryAuditManage() {
@@ -54,11 +52,17 @@ export default function InventoryAuditManage() {
 
   useEffect(() => {
     document.title = "Inventory Audit Manage | Multibrand POS";
-    api.get("/configure/stores", { params: { status: 1 } })
-      .then((res) => setStores(res.data.data.data.map((s: any) => ({ value: String(s.id), label: s.name }))))
+    loadOptions("/configure/stores")
+      .then(setStores)
       .catch(() => {});
     inventoryAuditService.getAuditNames({ per_page: 200 })
-      .then((res) => setAuditNames(res.data.map((n) => ({ value: String(n.id), label: n.audit_name }))))
+      .then((res) => {
+        const options: Option[] = [];
+        for (const auditName of res.data) {
+          options.push({ value: String(auditName.id), label: auditName.audit_name });
+        }
+        setAuditNames(options);
+      })
       .catch(() => {});
   }, []);
 
@@ -69,13 +73,15 @@ export default function InventoryAuditManage() {
 
   const remove = useCallback(async (row: InventoryAuditRow) => {
     const result = await confirm({ title: "Delete Audit?", text: `Delete audit ${row.entry_no} with all its counts?` });
-    if (!result.isConfirmed) return;
+    if (!result.isConfirmed) {
+      return;
+    }
     try {
       await inventoryAuditService.deleteAudit(row.id);
       toast.success(`${row.entry_no} deleted`);
       load();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Failed to delete audit");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Failed to delete audit"));
     }
   }, [confirm, load]);
 

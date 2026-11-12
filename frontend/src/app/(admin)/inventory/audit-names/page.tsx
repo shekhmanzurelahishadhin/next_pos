@@ -18,6 +18,7 @@ import Label from "@/components/form/Label";
 import DatePicker from "@/components/form/date-picker";
 import ReactSelect from "@/components/form/ReactSelect";
 import { formatDate } from "@/lib/format";
+import { apiErrorMessage } from "@/lib/options";
 import { inventoryAuditService, AuditName, AuditNamePayload } from "@/services/inventoryAuditService";
 
 const STATUS_OPTIONS = [
@@ -28,7 +29,9 @@ const STATUS_OPTIONS = [
 const inputClass =
   "h-10 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90";
 
-const emptyForm = (): AuditNamePayload => ({ audit_name: "", from_date: "", to_date: "", status: 1 });
+function emptyForm(): AuditNamePayload {
+  return { audit_name: "", from_date: "", to_date: "", status: 1 };
+}
 
 export default function AuditNameSetup() {
   const { hasPermission } = useAuth();
@@ -43,7 +46,7 @@ export default function AuditNameSetup() {
 
   const [editing, setEditing] = useState<AuditName | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState<AuditNamePayload>(emptyForm);
+  const [form, setForm] = useState<AuditNamePayload>(emptyForm());
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -75,44 +78,73 @@ export default function AuditNameSetup() {
 
   const openForm = useCallback((row: AuditName | null) => {
     setEditing(row);
-    setForm(row ? { audit_name: row.audit_name, from_date: row.from_date, to_date: row.to_date, status: Number(row.status ?? 1) } : emptyForm());
+    if (row) {
+      setForm({ audit_name: row.audit_name, from_date: row.from_date, to_date: row.to_date, status: Number(row.status ?? 1) });
+    } else {
+      setForm(emptyForm());
+    }
     setError("");
     setModalOpen(true);
   }, []);
 
   // stable functions, so the date pickers are not rebuilt on every render
-  const changeFrom = useCallback((_d: Date[], value: string) => setForm((f) => ({ ...f, from_date: value })), []);
-  const changeTo = useCallback((_d: Date[], value: string) => setForm((f) => ({ ...f, to_date: value })), []);
+  const changeFrom = useCallback((_dates: Date[], value: string) => {
+    setForm((oldForm) => ({ ...oldForm, from_date: value }));
+  }, []);
+  const changeTo = useCallback((_dates: Date[], value: string) => {
+    setForm((oldForm) => ({ ...oldForm, to_date: value }));
+  }, []);
 
-  const save = async () => {
-    if (!form.audit_name.trim()) return setError("Audit Name cannot be blank.");
-    if (!form.from_date) return setError("From Date cannot be blank.");
-    if (!form.to_date) return setError("To Date cannot be blank.");
-    if (form.to_date < form.from_date) return setError("To Date can not be before From Date.");
+  function changeName(value: string) {
+    setForm({ ...form, audit_name: value });
+  }
+
+  function changeStatus(value: string | number | null) {
+    setForm({ ...form, status: value ? Number(value) : 1 });
+  }
+
+  async function save() {
+    if (!form.audit_name.trim()) {
+      setError("Audit Name cannot be blank.");
+      return;
+    }
+    if (!form.from_date) {
+      setError("From Date cannot be blank.");
+      return;
+    }
+    if (!form.to_date) {
+      setError("To Date cannot be blank.");
+      return;
+    }
+    if (form.to_date < form.from_date) {
+      setError("To Date can not be before From Date.");
+      return;
+    }
+
     try {
       setSaving(true);
       await inventoryAuditService.saveAuditName({ ...form, audit_name: form.audit_name.trim() }, editing?.id);
       toast.success(editing ? "Audit name updated" : "Audit name saved");
       setModalOpen(false);
       load();
-    } catch (err: any) {
-      const errors = err?.response?.data?.errors;
-      const firstError = errors && Object.values(errors)[0];
-      setError((Array.isArray(firstError) ? firstError[0] : null) || err?.response?.data?.message || "Data not saved");
+    } catch (err) {
+      setError(apiErrorMessage(err, "Data not saved"));
     } finally {
       setSaving(false);
     }
-  };
+  }
 
   const remove = useCallback(async (row: AuditName) => {
     const result = await confirm({ title: "Delete Audit Name?", text: `Delete "${row.audit_name}"?` });
-    if (!result.isConfirmed) return;
+    if (!result.isConfirmed) {
+      return;
+    }
     try {
       await inventoryAuditService.deleteAuditName(row.id);
       toast.success("Audit name deleted");
       load();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Failed to delete audit name");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Failed to delete audit name"));
     }
   }, [confirm, load]);
 
@@ -221,7 +253,7 @@ export default function AuditNameSetup() {
                 value={form.audit_name}
                 maxLength={255}
                 placeholder="e.g. Nov-2026 Audit"
-                onChange={(e) => setForm((f) => ({ ...f, audit_name: e.target.value }))}
+                onChange={(e) => changeName(e.target.value)}
                 className={inputClass}
               />
             </div>
@@ -237,7 +269,7 @@ export default function AuditNameSetup() {
             </div>
             <div>
               <Label required>Status</Label>
-              <ReactSelect options={STATUS_OPTIONS} value={String(form.status)} isClearable={false} onChange={(v) => setForm((f) => ({ ...f, status: Number(v ?? 1) }))} />
+              <ReactSelect options={STATUS_OPTIONS} value={String(form.status)} isClearable={false} onChange={changeStatus} />
             </div>
           </div>
         </Modal>

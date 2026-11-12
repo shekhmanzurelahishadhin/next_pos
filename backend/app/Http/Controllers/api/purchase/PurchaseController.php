@@ -6,6 +6,7 @@ use App\Helpers\ApiResponse;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\purchase\DirectPurchaseRequest;
 use App\Models\purchase\Purchase;
+use App\Models\softConfig\Lookup;
 use App\Services\purchase\PurchaseService;
 use Illuminate\Http\Request;
 
@@ -24,15 +25,20 @@ class PurchaseController extends Controller
     // Purchase Manage: one row per purchased item
     public function index(Request $request)
     {
-        $rows = $this->service->getPurchaseRows(
-            $request->only('status', 'po_no', 'supplier_id', 'supplier_name', 'store_id', 'cash_due', 'purchase_type', 'part_number', 'product_name', 'location_name', 'purchase_date'),
-            $request->get('per_page')
-        );
+        $filters = $request->only('status', 'po_no', 'supplier_id', 'supplier_name', 'store_id', 'cash_due', 'purchase_type',
+            'part_number', 'product_name', 'location_name', 'purchase_date');
+        $rows = $this->service->getPurchaseRows($filters, $request->get('per_page'));
+
+        // add the status name to every row
+        $data = [];
+        foreach ($rows->items() as $row) {
+            $item = (array) $row;
+            $item['status_name'] = Purchase::STATUS_NAMES[$row->status] ?? '';
+            $data[] = $item;
+        }
 
         return ApiResponse::success([
-            'data'         => collect($rows->items())->map(fn($row) => (array) $row + [
-                'status_name' => Purchase::STATUS_NAMES[$row->status] ?? '',
-            ]),
+            'data'         => $data,
             'total'        => $rows->total(),
             'current_page' => $rows->currentPage(),
             'per_page'     => $rows->perPage(),
@@ -42,16 +48,16 @@ class PurchaseController extends Controller
     public function show(int $id)
     {
         $purchase = $this->service->getPurchase($id);
-        $lookup = fn(string $type, $code) => \App\Models\softConfig\Lookup::where('type', $type)->where('code', $code)->value('name');
 
-        return ApiResponse::success($purchase->toArray() + [
-            'cash_due_name'      => $lookup('cash_due', $purchase->cash_due),
-            'purchase_type_name' => $lookup('local_import', $purchase->purchase_type),
-            'ship_by_name'       => $lookup('ship_by', $purchase->ship_by),
-            'payment_type_name'  => $lookup('payment_type', $purchase->payment_type),
-            'status_name'  => Purchase::STATUS_NAMES[$purchase->status] ?? '',
-            'supplier_due' => $this->service->supplierDue($purchase->supplier_id),
-        ], 'Purchase retrieve successfully');
+        $data = $purchase->toArray();
+        $data['cash_due_name'] = $this->lookupName('cash_due', $purchase->cash_due);
+        $data['purchase_type_name'] = $this->lookupName('local_import', $purchase->purchase_type);
+        $data['ship_by_name'] = $this->lookupName('ship_by', $purchase->ship_by);
+        $data['payment_type_name'] = $this->lookupName('payment_type', $purchase->payment_type);
+        $data['status_name'] = Purchase::STATUS_NAMES[$purchase->status] ?? '';
+        $data['supplier_due'] = $this->service->supplierDue($purchase->supplier_id);
+
+        return ApiResponse::success($data, 'Purchase retrieve successfully');
     }
 
     public function formOptions()
@@ -65,10 +71,12 @@ class PurchaseController extends Controller
         if (mb_strlen($term) < 2) {
             return ApiResponse::success([], 'Type at least 2 characters');
         }
-        return ApiResponse::success(
-            $this->service->searchProducts($term, $request->integer('store_id') ?: null, $request->integer('location_id') ?: null),
-            'Products'
-        );
+
+        // 0 or empty = all stores / locations
+        $storeId = $request->integer('store_id') ?: null;
+        $locationId = $request->integer('location_id') ?: null;
+
+        return ApiResponse::success($this->service->searchProducts($term, $storeId, $locationId), 'Products');
     }
 
     public function searchSuppliers(Request $request)
@@ -77,51 +85,85 @@ class PurchaseController extends Controller
         if (mb_strlen($term) < 2) {
             return ApiResponse::success([], 'Type at least 2 characters');
         }
+
         return ApiResponse::success($this->service->searchSuppliers($term), 'Suppliers');
     }
 
     public function store(DirectPurchaseRequest $request)
     {
-        return $this->run(fn() => $this->service->createPurchase($request->validated()), 'Purchase created successfully', 201);
+        try {
+            $purchase = $this->service->createPurchase($request->validated());
+            return ApiResponse::success(['id' => $purchase->id, 'po_no' => $purchase->po_no], 'Purchase created successfully', 201);
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function update(DirectPurchaseRequest $request, Purchase $purchase)
     {
-        return $this->run(fn() => $this->service->updatePurchase($purchase, $request->validated()), 'Purchase updated successfully');
+        try {
+            $purchase = $this->service->updatePurchase($purchase, $request->validated());
+            return ApiResponse::success(['id' => $purchase->id, 'po_no' => $purchase->po_no], 'Purchase updated successfully');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function destroy(Purchase $purchase)
     {
-        return $this->run(fn() => $this->service->deletePurchase($purchase), 'Purchase deleted successfully');
+        try {
+            $this->service->deletePurchase($purchase);
+            return ApiResponse::success(null, 'Purchase deleted successfully');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function approve(Purchase $purchase)
     {
-        return $this->run(fn() => $this->service->approvePurchase($purchase), 'Purchase approved and received into stock');
+        try {
+            $this->service->approvePurchase($purchase);
+            return ApiResponse::success(null, 'Purchase approved and received into stock');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function cancel(Purchase $purchase)
     {
-        return $this->run(fn() => $this->service->cancelPurchase($purchase), 'Purchase cancelled');
+        try {
+            $this->service->cancelPurchase($purchase);
+            return ApiResponse::success(null, 'Purchase cancelled');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function undoCancel(Purchase $purchase)
     {
-        return $this->run(fn() => $this->service->undoCancelPurchase($purchase), 'Purchase cancellation undone');
+        try {
+            $this->service->undoCancelPurchase($purchase);
+            return ApiResponse::success(null, 'Purchase cancellation undone');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
-    // Business rule errors (locked, duplicate ...) go back as a 422 message
-    private function run(callable $action, string $message, int $code = 200)
+    // name of a lookup code, like cash_due "1" -> "Cash"
+    private function lookupName(string $type, $code)
     {
-        try {
-            $result = $action();
-            $data = $result instanceof Purchase ? ['id' => $result->id, 'po_no' => $result->po_no] : null;
-            return ApiResponse::success($data, $message, $code);
-        } catch (\RuntimeException $e) {
+        return Lookup::where('type', $type)->where('code', $code)->value('name');
+    }
+
+    // A business rule error (locked, duplicate ...) goes back as 422 with its message,
+    // any other error is logged and a general message is sent
+    private function errorResponse(\Exception $e)
+    {
+        if ($e instanceof \RuntimeException) {
             return ApiResponse::error($e->getMessage(), 422);
-        } catch (\Exception $e) {
-            report($e);
-            return ApiResponse::serverError('Something went wrong, please try again');
         }
+
+        report($e);
+        return ApiResponse::serverError('Something went wrong, please try again');
     }
 }

@@ -25,60 +25,68 @@ const PRINT_STYLE = `
   .sign span { border-top: 1px solid #333; padding-top: 4px; width: 160px; text-align: center; }
 `;
 
+const headCell = "border border-gray-200 px-2 py-1.5 text-left font-medium dark:border-gray-700";
+const cell = "border border-gray-200 px-2 py-1 dark:border-gray-700";
+const numberCell = "right border border-gray-200 px-2 py-1 text-right dark:border-gray-700";
+const totalCell = "right border border-gray-200 px-2 py-1 text-right font-semibold dark:border-gray-700";
+
 // PO voucher like the parts_bazar "PR Voucher Preview": shown after saving and from Purchase Manage
 export function PurchaseVoucher({ purchaseId, onClose }: PurchaseVoucherProps) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [purchase, setPurchase] = useState<any>(null);
   const printArea = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setPurchase(null);
-    if (purchaseId) purchaseService.getPurchase(purchaseId).then(setPurchase);
+    if (purchaseId) {
+      purchaseService.getPurchase(purchaseId).then(setPurchase);
+    }
   }, [purchaseId]);
 
-  const print = () => {
-    if (printArea.current) printHtml(purchase?.po_no ?? "Purchase", printArea.current.innerHTML, PRINT_STYLE);
-  };
-
-  const p = purchase;
+  function print() {
+    if (printArea.current && purchase) {
+      printHtml(purchase.po_no, printArea.current.innerHTML, PRINT_STYLE);
+    }
+  }
 
   return (
     <Modal
-      isOpen={!!purchaseId}
+      isOpen={purchaseId !== null}
       onClose={onClose}
       className="max-w-4xl"
       title="Purchase Voucher Preview"
       footer={
         <>
           <Button type="button" size="sm" variant="outline" onClick={onClose}>Close</Button>
-          <Button type="button" size="sm" onClick={print} disabled={!p}>Print</Button>
+          <Button type="button" size="sm" onClick={print} disabled={!purchase}>Print</Button>
         </>
       }
     >
-      {!p ? (
-        <p className="py-8 text-center text-sm text-gray-500">Loading...</p>
-      ) : (
+      {!purchase && <p className="py-8 text-center text-sm text-gray-500">Loading...</p>}
+
+      {purchase && (
         <div ref={printArea} className="text-[13px] text-gray-800 dark:text-gray-200">
           <div className="center text-center">
-            <h2 className="text-lg font-semibold">{p.company?.name ?? "Purchase Order"}</h2>
-            {p.company?.address && <div className="text-xs text-gray-500">{p.company.address}</div>}
-            <h3 className="mt-1 text-sm">Purchase Order ({p.status_name})</h3>
+            <h2 className="text-lg font-semibold">{purchase.company ? purchase.company.name : "Purchase Order"}</h2>
+            {purchase.company && purchase.company.address && <div className="text-xs text-gray-500">{purchase.company.address}</div>}
+            <h3 className="mt-1 text-sm">Purchase Order ({purchase.status_name})</h3>
           </div>
 
           <div className="info my-3 flex flex-wrap justify-between gap-6">
             <table>
               <tbody>
-                <tr><td className="pr-3 text-gray-500">PO No</td><td className="font-semibold">{p.po_no}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Date</td><td>{formatDate(p.purchase_date)}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Supplier</td><td>{p.supplier?.name}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Supplier Bill No</td><td>{p.supplier_bill_no || "-"}</td></tr>
+                <tr><td className="pr-3 text-gray-500">PO No</td><td className="font-semibold">{purchase.po_no}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Date</td><td>{formatDate(purchase.purchase_date)}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Supplier</td><td>{purchase.supplier ? purchase.supplier.name : ""}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Supplier Bill No</td><td>{purchase.supplier_bill_no || "-"}</td></tr>
               </tbody>
             </table>
             <table>
               <tbody>
-                <tr><td className="pr-3 text-gray-500">Store</td><td>{p.store?.name}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Cash / Due</td><td>{p.cash_due_name ?? "-"}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Local / Import</td><td>{p.purchase_type_name ?? "-"}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Ship By</td><td>{p.ship_by_name ?? "-"}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Store</td><td>{purchase.store ? purchase.store.name : ""}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Cash / Due</td><td>{purchase.cash_due_name || "-"}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Local / Import</td><td>{purchase.purchase_type_name || "-"}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Ship By</td><td>{purchase.ship_by_name || "-"}</td></tr>
               </tbody>
             </table>
           </div>
@@ -86,41 +94,50 @@ export function PurchaseVoucher({ purchaseId, onClose }: PurchaseVoucherProps) {
           <table className="items w-full border-collapse text-xs">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-800">
-                {["SL", "Part Number", "Product Name", "Location", "Unit", "Qty", "Unit Price", "Weight Amount", "Total"].map((h) => (
-                  <th key={h} className="border border-gray-200 px-2 py-1.5 text-left font-medium dark:border-gray-700">{h}</th>
-                ))}
+                <th className={headCell}>SL</th>
+                <th className={headCell}>Part Number</th>
+                <th className={headCell}>Product Name</th>
+                <th className={headCell}>Location</th>
+                <th className={headCell}>Unit</th>
+                <th className={headCell}>Qty</th>
+                <th className={headCell}>Unit Price</th>
+                <th className={headCell}>Weight Amount</th>
+                <th className={headCell}>Total</th>
               </tr>
             </thead>
             <tbody>
-              {p.details.map((d: any, i: number) => (
-                <tr key={d.id}>
-                  <td className="border border-gray-200 px-2 py-1 dark:border-gray-700">{i + 1}</td>
-                  <td className="border border-gray-200 px-2 py-1 dark:border-gray-700">{d.product?.part_number}</td>
-                  <td className="border border-gray-200 px-2 py-1 dark:border-gray-700">{d.product?.name}</td>
-                  <td className="border border-gray-200 px-2 py-1 dark:border-gray-700">{d.location?.name}</td>
-                  <td className="border border-gray-200 px-2 py-1 dark:border-gray-700">{d.unit}</td>
-                  <td className="right border border-gray-200 px-2 py-1 text-right dark:border-gray-700">{d.qty}</td>
-                  <td className="right border border-gray-200 px-2 py-1 text-right dark:border-gray-700">{formatMoney(d.unit_price)}</td>
-                  <td className="right border border-gray-200 px-2 py-1 text-right dark:border-gray-700">{formatMoney(d.total_weight_amount)}</td>
-                  <td className="right border border-gray-200 px-2 py-1 text-right dark:border-gray-700">{formatMoney(d.total_purchase_price)}</td>
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              {purchase.details.map((detail: any, index: number) => (
+                <tr key={detail.id}>
+                  <td className={cell}>{index + 1}</td>
+                  <td className={cell}>{detail.product ? detail.product.part_number : ""}</td>
+                  <td className={cell}>{detail.product ? detail.product.name : ""}</td>
+                  <td className={cell}>{detail.location ? detail.location.name : ""}</td>
+                  <td className={cell}>{detail.unit}</td>
+                  <td className={numberCell}>{detail.qty}</td>
+                  <td className={numberCell}>{formatMoney(detail.unit_price)}</td>
+                  <td className={numberCell}>{formatMoney(detail.total_weight_amount)}</td>
+                  <td className={numberCell}>{formatMoney(detail.total_purchase_price)}</td>
                 </tr>
               ))}
-              {[
-                ["Grand Total", p.grand_total],
-                ["Paid", p.payment_amount],
-                ["Due", p.due_amount],
-              ].map(([label, value]) => (
-                <tr key={label as string}>
-                  <td colSpan={8} className="right border border-gray-200 px-2 py-1 text-right font-semibold dark:border-gray-700">{label}</td>
-                  <td className="right border border-gray-200 px-2 py-1 text-right font-semibold dark:border-gray-700">{formatMoney(value as string)}</td>
-                </tr>
-              ))}
+              <tr>
+                <td colSpan={8} className={totalCell}>Grand Total</td>
+                <td className={totalCell}>{formatMoney(purchase.grand_total)}</td>
+              </tr>
+              <tr>
+                <td colSpan={8} className={totalCell}>Paid</td>
+                <td className={totalCell}>{formatMoney(purchase.payment_amount)}</td>
+              </tr>
+              <tr>
+                <td colSpan={8} className={totalCell}>Due</td>
+                <td className={totalCell}>{formatMoney(purchase.due_amount)}</td>
+              </tr>
             </tbody>
           </table>
 
           <div className="sign mt-14 flex justify-between text-xs">
-            <span className="w-40 border-t border-gray-400 pt-1 text-center">Prepared By: {p.created_by?.name ?? ""}</span>
-            <span className="w-40 border-t border-gray-400 pt-1 text-center">Approved By: {p.approved_by?.name ?? ""}</span>
+            <span className="w-40 border-t border-gray-400 pt-1 text-center">Prepared By: {purchase.created_by ? purchase.created_by.name : ""}</span>
+            <span className="w-40 border-t border-gray-400 pt-1 text-center">Approved By: {purchase.approved_by ? purchase.approved_by.name : ""}</span>
           </div>
         </div>
       )}

@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { removeEmpty } from "@/lib/options";
 
 export type Option = { value: string; label: string };
 
@@ -91,19 +92,30 @@ export interface PurchaseRow {
 
 export const PURCHASE_STATUS = { PENDING: 0, APPROVED: 1, CANCELLED: 3 };
 
+// round to 2 decimals and keep it a number
+function round2(value: number): number {
+  return Number(value.toFixed(2));
+}
+
 // Same sums as the parts_bazar purchase grid
-export const calcLine = (qty: number, unitPrice: number, perKg: number, weightUnit: number) => {
+export function calcLine(qty: number, unitPrice: number, perKg: number, weightUnit: number) {
   const productPrice = qty * unitPrice;
-  const weightAmount = qty * weightUnit * perKg;
+  const weightAmount = qty * weightUnit * perKg; // weight cost
   const total = productPrice + weightAmount;
+
+  let totalUnitPrice = 0;
+  if (qty > 0) {
+    totalUnitPrice = round2(total / qty);
+  }
+
   return {
-    total_product_price: +productPrice.toFixed(2),
-    total_weight: +(qty * weightUnit).toFixed(2),
-    total_weight_amount: +weightAmount.toFixed(2),
-    total_purchase_price: +total.toFixed(2),
-    total_unit_price: qty > 0 ? +(total / qty).toFixed(2) : 0,
+    total_product_price: round2(productPrice),
+    total_weight: round2(qty * weightUnit),
+    total_weight_amount: round2(weightAmount),
+    total_purchase_price: round2(total),
+    total_unit_price: totalUnitPrice,
   };
-};
+}
 
 const BASE = "/purchase/purchases";
 
@@ -124,8 +136,7 @@ class PurchaseService {
   }
 
   async getPurchases(filters: Record<string, string | number> = {}) {
-    const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "" && v !== undefined && v !== null));
-    const res = await api.get(BASE, { params });
+    const res = await api.get(BASE, { params: removeEmpty(filters) });
     return res.data.data as { data: PurchaseRow[]; total: number };
   }
 

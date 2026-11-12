@@ -1,9 +1,10 @@
 "use client";
-// parts_bazar sellItems/salesSummaryReport: one row per approved bill with the money received and the balance due
-import { useCallback, useEffect, useMemo, useState } from "react";
+// Sales Summary Report (parts_bazar sellItems/salesSummaryReport)
+// One row per approved bill with the money received against it and the balance due.
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
-import { api } from "@/lib/api";
 import { formatDate } from "@/lib/format";
+import { apiErrorMessage, filledFields, firstDayOfMonth, labelLines, loadOptions, Option, reportMoney, today } from "@/lib/report";
 import AccessRoute from "@/routes/AccessRoute";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import DatePicker from "@/components/form/date-picker";
@@ -13,88 +14,122 @@ import ReportView, { rptTd, rptTh, rptTotal } from "@/components/report/ReportVi
 import { CustomerPicker } from "@/components/report/ReportPickers";
 import { reportService, SalesSummaryReport } from "@/services/reportService";
 
-type Option = { value: string; label: string };
-type Named = { id: number; name: string };
+type SearchForm = {
+  start_date: string;
+  end_date: string;
+  company_id: string;
+  customer_type_id: string;
+  customer_id: string;
+  paid: string; // "1" = paid, "0" = due, "" = all
+};
 
 const STATUS_OPTIONS = [
   { value: "0", label: "Due" },
   { value: "1", label: "Paid" },
 ];
 
-const today = () => new Date().toISOString().slice(0, 10);
-const monthStart = () => today().slice(0, 8) + "01";
-const emptyForm = () => ({ start_date: monthStart(), end_date: today(), company_id: "", customer_type_id: "", customer_id: "", paid: "" });
-
-const money = (n: number) => Math.round(n).toLocaleString("en-US");
-const toOptions = (list: Named[]): Option[] => list.map((x) => ({ value: String(x.id), label: x.name }));
+function emptyForm(): SearchForm {
+  return { start_date: firstDayOfMonth(), end_date: today(), company_id: "", customer_type_id: "", customer_id: "", paid: "" };
+}
 
 export default function SalesSummaryReportPage() {
-  const [form, setForm] = useState(emptyForm);
-  const [formKey, setFormKey] = useState(0); // new key = fresh date pickers on reset
+  const [form, setForm] = useState<SearchForm>(emptyForm());
+  const [formKey, setFormKey] = useState(0); // changing it gives fresh date pickers on reset
   const [customerText, setCustomerText] = useState("");
   const [companies, setCompanies] = useState<Option[]>([]);
   const [customerTypes, setCustomerTypes] = useState<Option[]>([]);
   const [report, setReport] = useState<SalesSummaryReport | null>(null);
-  const [searched, setSearched] = useState<ReturnType<typeof emptyForm> | null>(null);
+  const [searchedForm, setSearchedForm] = useState<SearchForm | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const set = (name: keyof ReturnType<typeof emptyForm>, value: string) => setForm((f) => ({ ...f, [name]: value }));
-
   useEffect(() => {
     document.title = "Sales Summary Report | Multibrand POS";
-    api.get("/configure/companies", { params: { status: 1 } })
-      .then((res) => {
-        const list = toOptions(res.data.data.data);
-        setCompanies(list);
-        if (list.length === 1) setForm((f) => ({ ...f, company_id: list[0].value }));
-      })
-      .catch(() => {});
-    api.get("/configure/lookups", { params: { status: 1, type: "customer_type" } })
-      .then((res) => setCustomerTypes(toOptions(res.data.data.data)))
-      .catch(() => {});
+    loadCompanies();
+    loadOptions("/configure/lookups", { type: "customer_type" }).then(setCustomerTypes).catch(() => {});
   }, []);
 
-  // stable functions, so the date pickers are not rebuilt on every render
-  const changeStart = useCallback((_d: Date[], value: string) => setForm((f) => ({ ...f, start_date: value })), []);
-  const changeEnd = useCallback((_d: Date[], value: string) => setForm((f) => ({ ...f, end_date: value })), []);
-
-  const search = async () => {
-    if (!form.start_date || !form.end_date) return setError("Please select date range!");
-    if (form.end_date < form.start_date) return setError("Date To can not be before Date From.");
-    setError("");
+  async function loadCompanies() {
     try {
-      setLoading(true);
-      const params = Object.fromEntries(Object.entries(form).filter(([, v]) => v !== ""));
-      setReport(await reportService.salesSummary(params));
-      setSearched(form);
+      const list = await loadOptions("/configure/companies");
+      setCompanies(list);
+
+      // a company user has only one company, so pick it
+      if (list.length === 1) {
+        setForm((old) => ({ ...old, company_id: list[0].value }));
+      }
+    } catch {
+      // the list is only a filter, the page still works without it
+    }
+  }
+
+  function setField(name: keyof SearchForm, value: string) {
+    setForm((old) => ({ ...old, [name]: value }));
+  }
+
+  // the date pickers need functions that do not change on every render
+  const changeStartDate = useCallback((_dates: Date[], value: string) => {
+    setForm((old) => ({ ...old, start_date: value }));
+  }, []);
+  const changeEndDate = useCallback((_dates: Date[], value: string) => {
+    setForm((old) => ({ ...old, end_date: value }));
+  }, []);
+
+  async function search() {
+    if (!form.start_date || !form.end_date) {
+      setError("Please select date range!");
+      return;
+    }
+    if (form.end_date < form.start_date) {
+      setError("Date To can not be before Date From.");
+      return;
+    }
+    setError("");
+
+    setLoading(true);
+    try {
+      const result = await reportService.salesSummary(filledFields(form));
+      setReport(result);
+      setSearchedForm(form);
     } catch (err) {
-      toast.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || "Failed to load report");
+      toast.error(apiErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const reset = () => {
-    setForm({ ...emptyForm(), company_id: companies.length === 1 ? companies[0].value : "" });
+  function reset() {
+    const newForm = emptyForm();
+    if (companies.length === 1) {
+      newForm.company_id = companies[0].value;
+    }
+    setForm(newForm);
     setCustomerText("");
     setError("");
-    setFormKey((k) => k + 1);
-  };
+    setFormKey(formKey + 1);
+  }
 
-  const rows = useMemo(() => report?.rows ?? [], [report]);
-  const totals = useMemo(() => ({
-    bill: rows.reduce((t, r) => t + r.grand_total, 0),
-    received: rows.reduce((t, r) => t + r.received_amount, 0),
-    due: rows.reduce((t, r) => t + r.due_amount, 0),
-    dueBills: rows.filter((r) => !r.paid).length,
-  }), [rows]);
+  // totals of the report
+  const rows = report ? report.rows : [];
+  let totalBill = 0;
+  let totalReceived = 0;
+  let totalDue = 0;
+  let dueBillCount = 0;
+  for (const row of rows) {
+    totalBill += row.grand_total;
+    totalReceived += row.received_amount;
+    totalDue += row.due_amount;
+    if (!row.paid) {
+      dueBillCount++;
+    }
+  }
 
-  const lines = searched && report
-    ? [`From ${formatDate(searched.start_date)} To ${formatDate(searched.end_date)}`, ...Object.entries(report.labels).map(([k, v]) => `${k}: ${v}`)]
-    : [];
-
-  const heads = ["SL", "Bill Date", "Order Status", "Customer Type", "Customer Name", "Bill No", "Bill Amount", "Received Amount", "Balance Due"];
+  // lines under the report title
+  const headerLines: string[] = [];
+  if (report && searchedForm) {
+    headerLines.push(`From ${formatDate(searchedForm.start_date)} To ${formatDate(searchedForm.end_date)}`);
+    headerLines.push(...labelLines(report.labels));
+  }
 
   return (
     <AccessRoute requiredPermissions={["sales-summary-report.view"]}>
@@ -103,10 +138,10 @@ export default function SalesSummaryReportPage() {
 
         <ReportSearchCard title="Sales Summary Report" onSearch={search} onReset={reset} loading={loading} error={error}>
           <ReportField label="Date From" required>
-            <DatePicker key={`s${formKey}`} id="rpt_start_date" defaultDate={form.start_date} onChange={changeStart} placeholder="Date from" />
+            <DatePicker key={`start${formKey}`} id="rpt_start_date" defaultDate={form.start_date} onChange={changeStartDate} placeholder="Date from" />
           </ReportField>
           <ReportField label="Date To" required>
-            <DatePicker key={`e${formKey}`} id="rpt_end_date" defaultDate={form.end_date} onChange={changeEnd} placeholder="Date to" />
+            <DatePicker key={`end${formKey}`} id="rpt_end_date" defaultDate={form.end_date} onChange={changeEndDate} placeholder="Date to" />
           </ReportField>
           <ReportField label="Company">
             <ReactSelect
@@ -114,20 +149,36 @@ export default function SalesSummaryReportPage() {
               value={form.company_id || null}
               placeholder="All companies"
               isDisabled={companies.length === 1}
-              onChange={(v) => set("company_id", v ? String(v) : "")}
+              onChange={(value) => setField("company_id", value ? String(value) : "")}
             />
           </ReportField>
           <ReportField label="Customer Type">
-            <ReactSelect options={customerTypes} value={form.customer_type_id || null} placeholder="All" onChange={(v) => set("customer_type_id", v ? String(v) : "")} />
+            <ReactSelect
+              options={customerTypes}
+              value={form.customer_type_id || null}
+              placeholder="All"
+              onChange={(value) => setField("customer_type_id", value ? String(value) : "")}
+            />
           </ReportField>
           <ReportField label="Order Status">
-            <ReactSelect options={STATUS_OPTIONS} value={form.paid || null} placeholder="All" onChange={(v) => set("paid", v === null ? "" : String(v))} />
+            <ReactSelect
+              options={STATUS_OPTIONS}
+              value={form.paid || null}
+              placeholder="All"
+              onChange={(value) => setField("paid", value === null ? "" : String(value))}
+            />
           </ReportField>
           <ReportField label="Customer Name" className="sm:col-span-2">
             <CustomerPicker
               text={customerText}
-              onText={(t) => { setCustomerText(t); set("customer_id", ""); }}
-              onPick={(id, t) => { setCustomerText(t); set("customer_id", id); }}
+              onText={(text) => {
+                setCustomerText(text);
+                setField("customer_id", ""); // typing again clears the picked customer
+              }}
+              onPick={(id, text) => {
+                setCustomerText(text);
+                setField("customer_id", id);
+              }}
             />
           </ReportField>
         </ReportSearchCard>
@@ -141,58 +192,68 @@ export default function SalesSummaryReportPage() {
         {report && (
           <ReportView
             title="Sales Summary Report"
-            lines={lines}
+            lines={headerLines}
             company={report.company}
             fileName="sales-summary-report"
             rowCount={rows.length}
             summary={[
               { label: "Bills", value: String(rows.length) },
-              { label: "Due Bills", value: String(totals.dueBills), tone: totals.dueBills ? "error" : undefined },
-              { label: "Bill Amount", value: money(totals.bill) },
-              { label: "Received", value: money(totals.received), tone: "success" },
-              { label: "Balance Due", value: money(totals.due), tone: totals.due > 0 ? "error" : undefined },
+              { label: "Due Bills", value: String(dueBillCount), tone: dueBillCount > 0 ? "error" : undefined },
+              { label: "Bill Amount", value: reportMoney(totalBill) },
+              { label: "Received", value: reportMoney(totalReceived), tone: "success" },
+              { label: "Balance Due", value: reportMoney(totalDue), tone: totalDue > 0 ? "error" : undefined },
             ]}
           >
             <table className="rpt-table w-full border-collapse text-xs">
               <thead>
                 <tr>
-                  {heads.map((h, i) => (
-                    <th key={h} className={`${rptTh} ${i >= 6 ? "num text-right" : "text-left"}`}>{h}</th>
-                  ))}
+                  <th className={`${rptTh} text-left`}>SL</th>
+                  <th className={`${rptTh} text-left`}>Bill Date</th>
+                  <th className={`${rptTh} text-left`}>Order Status</th>
+                  <th className={`${rptTh} text-left`}>Customer Type</th>
+                  <th className={`${rptTh} text-left`}>Customer Name</th>
+                  <th className={`${rptTh} text-left`}>Bill No</th>
+                  <th className={`${rptTh} num text-right`}>Bill Amount</th>
+                  <th className={`${rptTh} num text-right`}>Received Amount</th>
+                  <th className={`${rptTh} num text-right`}>Balance Due</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 && (
-                  <tr><td colSpan={heads.length} className={`${rptTd} center py-6 text-center text-gray-400`}>No result found!</td></tr>
-                )}
-                {rows.map((r, i) => (
-                  <tr key={r.id} className="even:bg-gray-50/60 hover:bg-brand-50/40 dark:even:bg-white/[0.02] dark:hover:bg-white/[0.04]">
-                    <td className={`${rptTd} center text-center text-gray-500`}>{i + 1}</td>
-                    <td className={`${rptTd} whitespace-nowrap`}>{formatDate(r.order_date)}</td>
-                    <td className={rptTd}>
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${r.paid
-                        ? "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-500"
-                        : "bg-error-50 text-error-600 dark:bg-error-500/15 dark:text-error-400"}`}
-                      >
-                        {r.paid ? "Paid" : "Due"}
-                      </span>
-                    </td>
-                    <td className={rptTd}>{r.customer_type}</td>
-                    <td className={`${rptTd} min-w-[150px]`}>{r.customer_name}</td>
-                    <td className={`${rptTd} whitespace-nowrap font-medium text-gray-800 dark:text-white/90`}>{r.so_no}</td>
-                    <td className={`${rptTd} num text-right`}>{money(r.grand_total)}</td>
-                    <td className={`${rptTd} num text-right text-success-600 dark:text-success-400`}>{money(r.received_amount)}</td>
-                    <td className={`${rptTd} num text-right font-semibold ${r.due_amount > 0 ? "text-error-600 dark:text-error-400" : ""}`}>{money(r.due_amount)}</td>
+                  <tr>
+                    <td colSpan={9} className={`${rptTd} center py-6 text-center text-gray-400`}>No result found!</td>
                   </tr>
-                ))}
+                )}
+                {rows.map((row, index) => {
+                  let statusClass = "bg-error-50 text-error-600 dark:bg-error-500/15 dark:text-error-400";
+                  if (row.paid) {
+                    statusClass = "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-500";
+                  }
+
+                  return (
+                    <tr key={row.id} className="even:bg-gray-50/60 hover:bg-brand-50/40 dark:even:bg-white/[0.02] dark:hover:bg-white/[0.04]">
+                      <td className={`${rptTd} center text-center text-gray-500`}>{index + 1}</td>
+                      <td className={`${rptTd} whitespace-nowrap`}>{formatDate(row.order_date)}</td>
+                      <td className={rptTd}>
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass}`}>{row.paid ? "Paid" : "Due"}</span>
+                      </td>
+                      <td className={rptTd}>{row.customer_type}</td>
+                      <td className={`${rptTd} min-w-[150px]`}>{row.customer_name}</td>
+                      <td className={`${rptTd} whitespace-nowrap font-medium text-gray-800 dark:text-white/90`}>{row.so_no}</td>
+                      <td className={`${rptTd} num text-right`}>{reportMoney(row.grand_total)}</td>
+                      <td className={`${rptTd} num text-right text-success-600 dark:text-success-400`}>{reportMoney(row.received_amount)}</td>
+                      <td className={`${rptTd} num text-right font-semibold ${row.due_amount > 0 ? "text-error-600 dark:text-error-400" : ""}`}>{reportMoney(row.due_amount)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
               {rows.length > 0 && (
                 <tfoot>
                   <tr className={rptTotal}>
                     <td colSpan={6} className={`${rptTd} num text-right`}>Total</td>
-                    <td className={`${rptTd} num text-right`}>{money(totals.bill)}</td>
-                    <td className={`${rptTd} num text-right`}>{money(totals.received)}</td>
-                    <td className={`${rptTd} num text-right`}>{money(totals.due)}</td>
+                    <td className={`${rptTd} num text-right`}>{reportMoney(totalBill)}</td>
+                    <td className={`${rptTd} num text-right`}>{reportMoney(totalReceived)}</td>
+                    <td className={`${rptTd} num text-right`}>{reportMoney(totalDue)}</td>
                   </tr>
                 </tfoot>
               )}

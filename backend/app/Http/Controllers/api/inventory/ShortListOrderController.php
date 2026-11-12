@@ -21,52 +21,64 @@ class ShortListOrderController extends Controller
     // Manage Short List Order: one row per product line
     public function index(Request $request)
     {
-        $rows = $this->service->getRows(
-            $request->only('max_sl_no', 'store_id', 'product_name', 'code'),
-            $request->get('per_page')
-        );
+        $filters = $request->only('max_sl_no', 'store_id', 'product_name', 'code');
+        $rows = $this->service->getRows($filters, $request->get('per_page'));
+
         return ApiResponse::success(['data' => $rows->items(), 'total' => $rows->total()], 'Short list orders retrieve successfully');
     }
 
-    // Part number autocomplete with stock of the store and the last purchase price
+    // Part number autocomplete with the stock of the store and the last purchase price
     public function searchProducts(Request $request, PurchaseService $purchaseService)
     {
         $term = trim((string) $request->get('term'));
         if (mb_strlen($term) < 2) {
             return ApiResponse::success([], 'Type at least 2 characters');
         }
-        return ApiResponse::success($purchaseService->searchProducts($term, $request->integer('store_id') ?: null), 'Products');
+
+        // 0 or empty = all stores
+        $storeId = $request->integer('store_id') ?: null;
+
+        return ApiResponse::success($purchaseService->searchProducts($term, $storeId), 'Products');
     }
 
     public function store(ShortListOrderRequest $request)
     {
-        return $this->run(
-            fn() => ['max_sl_no' => $this->service->createList($request->validated()['items'])],
-            'Short list order saved successfully',
-            201
-        );
+        try {
+            $maxSlNo = $this->service->createList($request->validated()['items']);
+            return ApiResponse::success(['max_sl_no' => $maxSlNo], 'Short list order saved successfully', 201);
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function show(int $maxSlNo)
     {
-        return $this->run(fn() => $this->service->getList($maxSlNo), 'Short list order retrieve successfully');
+        try {
+            return ApiResponse::success($this->service->getList($maxSlNo), 'Short list order retrieve successfully');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function destroy(int $maxSlNo)
     {
-        return $this->run(fn() => $this->service->deleteList($maxSlNo), 'Short list order deleted successfully');
+        try {
+            $this->service->deleteList($maxSlNo);
+            return ApiResponse::success(null, 'Short list order deleted successfully');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
-    // business rule errors go back as 422 with the message
-    private function run(callable $action, string $message, int $code = 200)
+    // A business rule error goes back as 422 with its message,
+    // any other error is logged and a general message is sent
+    private function errorResponse(\Exception $e)
     {
-        try {
-            return ApiResponse::success($action(), $message, $code);
-        } catch (\RuntimeException $e) {
+        if ($e instanceof \RuntimeException) {
             return ApiResponse::error($e->getMessage(), 422);
-        } catch (\Exception $e) {
-            report($e);
-            return ApiResponse::serverError('Something went wrong, please try again');
         }
+
+        report($e);
+        return ApiResponse::serverError('Something went wrong, please try again');
     }
 }

@@ -48,21 +48,29 @@ class InventoryBarcode extends Model
     // Qty of this barcode still in stock
     public static function closingStock(?string $barcode): float
     {
-        if (!$barcode) return 0;
-        return (float) self::where('barcode', $barcode)->selectRaw('COALESCE(SUM(stock_in - stock_out), 0) as stock')->value('stock');
+        if (!$barcode) {
+            return 0;
+        }
+
+        $stock = self::where('barcode', $barcode)->selectRaw('COALESCE(SUM(stock_in - stock_out), 0) as stock')->value('stock');
+        return (float) $stock;
     }
 
     // Stock going out of a barcode (purchase return, sale); a negative qty puts it back
     public static function addStockOut(?string $barcode, float $qty): void
     {
-        if (!$barcode) return;
+        if (!$barcode) {
+            return;
+        }
         self::where('barcode', $barcode)->increment('stock_out', $qty);
     }
 
     // Stock coming back into a barcode (sales return); a negative qty takes it out again
     public static function addStockIn(?string $barcode, float $qty): void
     {
-        if (!$barcode) return;
+        if (!$barcode) {
+            return;
+        }
         self::where('barcode', $barcode)->increment('stock_in', $qty);
     }
 }

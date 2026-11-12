@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { removeEmpty } from "@/lib/options";
 
 // "Create Supplier Payment" row
 export interface SpSupplierRow {
@@ -61,12 +62,10 @@ export interface SpRow {
 
 const BASE = "/purchase/supplier-payments";
 
-const clean = (filters: Record<string, string | number>) =>
-  Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "" && v !== undefined && v !== null));
 
 class SupplierPaymentService {
   async getSuppliers(filters: Record<string, string | number> = {}) {
-    const res = await api.get(`${BASE}/suppliers`, { params: clean(filters) });
+    const res = await api.get(`${BASE}/suppliers`, { params: removeEmpty(filters) });
     return res.data.data as { data: SpSupplierRow[]; total: number };
   }
 
@@ -81,7 +80,7 @@ class SupplierPaymentService {
   }
 
   async getPayments(filters: Record<string, string | number> = {}) {
-    const res = await api.get(BASE, { params: clean(filters) });
+    const res = await api.get(BASE, { params: removeEmpty(filters) });
     return res.data.data as { data: SpRow[]; total: number };
   }
 

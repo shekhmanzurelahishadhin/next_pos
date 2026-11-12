@@ -12,7 +12,7 @@ import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import ComponentCard from "@/components/common/ComponentCard";
 import { DataTable } from "@/components/tables/DataTable";
 import ActionButtons from "@/components/ui/button/ActionButton";
-import { api } from "@/lib/api";
+import { apiErrorMessage, loadOptions } from "@/lib/options";
 import { formatDate, formatMoney } from "@/lib/format";
 import { purchaseReturnService, ReturnRow } from "@/services/purchaseReturnService";
 import { ReturnChalanModal } from "../components/PurchaseReturnModals";
@@ -51,8 +51,8 @@ export default function PurchaseReturnManage() {
 
   useEffect(() => {
     document.title = "Purchase Return Manage | Multibrand POS";
-    api.get("/configure/stores", { params: { status: 1 } })
-      .then((res) => setStores(res.data.data.data.map((s: any) => ({ value: String(s.id), label: s.name }))))
+    loadOptions("/configure/stores")
+      .then(setStores)
       .catch(() => {});
   }, []);
 
@@ -68,8 +68,8 @@ export default function PurchaseReturnManage() {
       await purchaseReturnService.deleteReturn(row.purchase_return_id);
       toast.success(`${row.return_no} deleted`);
       load();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Failed to delete return");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Failed to delete return"));
     }
   }, [confirm, load]);
 

@@ -13,6 +13,7 @@ import ComponentCard from "@/components/common/ComponentCard";
 import { DataTable } from "@/components/tables/DataTable";
 import ActionButtons from "@/components/ui/button/ActionButton";
 import { formatDate } from "@/lib/format";
+import { apiErrorMessage } from "@/lib/options";
 import { stockTransferService, StockTransferRow, TRANSFER_STATUS } from "@/services/stockTransferService";
 import { StockTransferViewModal } from "../components/StockTransferView";
 
@@ -21,7 +22,13 @@ const STATUS_OPTIONS = [
   { value: String(TRANSFER_STATUS.APPROVED), label: "Approved" },
 ];
 
-const dateTime = (value?: string | null) => (value ? `${formatDate(value)} ${String(value).slice(11, 16)}` : "");
+// "2026-11-03 10:25:00" shown as the date and the hh:mm
+function dateTime(value?: string | null) {
+  if (!value) {
+    return "";
+  }
+  return `${formatDate(value)} ${String(value).slice(11, 16)}`;
+}
 
 // parts_bazar stockTransfer/admin: one row per transfer, edit / delete / approve while pending
 export default function StockTransferManage() {
@@ -63,15 +70,34 @@ export default function StockTransferManage() {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   }, []);
 
-  const act = useCallback(async (title: string, text: string, action: () => Promise<void>, done: string) => {
-    const result = await confirm({ title, text });
-    if (!result.isConfirmed) return;
+  const removeTransfer = useCallback(async (transfer: StockTransferRow) => {
+    const result = await confirm({ title: "Delete Stock Transfer?", text: `Delete ${transfer.transfer_no}? This can not be undone.` });
+    if (!result.isConfirmed) {
+      return;
+    }
     try {
-      await action();
-      toast.success(done);
+      await stockTransferService.deleteTransfer(transfer.id);
+      toast.success(`${transfer.transfer_no} deleted`);
       load();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Something went wrong");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Something went wrong"));
+    }
+  }, [confirm, load]);
+
+  const approveTransfer = useCallback(async (transfer: StockTransferRow) => {
+    const result = await confirm({
+      title: "Approve Stock Transfer?",
+      text: `Approve ${transfer.transfer_no}? The goods move to the new store / location with new barcodes, and the transfer is locked.`,
+    });
+    if (!result.isConfirmed) {
+      return;
+    }
+    try {
+      await stockTransferService.approveTransfer(transfer.id);
+      toast.success("Stock Transfer Approved Successfully");
+      load();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Something went wrong"));
     }
   }, [confirm, load]);
 
@@ -138,36 +164,34 @@ export default function StockTransferManage() {
       header: "Options",
       meta: { filterVariant: "none", widthClass: "w-[130px]" },
       cell: ({ row }) => {
-        const r = row.original;
-        const pending = r.status === TRANSFER_STATUS.PENDING;
+        const transfer = row.original;
+        const pending = transfer.status === TRANSFER_STATUS.PENDING;
         return (
           <ActionButtons
-            row={r}
+            row={transfer}
             buttons={[
-              { icon: FiEye, variant: "success", size: "sm", tooltip: "View Details", onClick: () => setViewId(r.id) },
+              { icon: FiEye, variant: "success", size: "sm", tooltip: "View Details", onClick: () => setViewId(transfer.id) },
               {
                 icon: FiEdit, variant: "primary", size: "sm", tooltip: "Edit",
                 show: () => pending && hasPermission("stock-transfer.edit"),
-                onClick: () => router.push(`/inventory/stock-transfer?id=${r.id}`),
+                onClick: () => router.push(`/inventory/stock-transfer?id=${transfer.id}`),
               },
               {
                 icon: FiTrash, variant: "danger", size: "sm", tooltip: "Delete",
                 show: () => pending && hasPermission("stock-transfer.delete"),
-                onClick: () => act("Delete Stock Transfer?", `Delete ${r.transfer_no}? This can not be undone.`,
-                  () => stockTransferService.deleteTransfer(r.id), `${r.transfer_no} deleted`),
+                onClick: () => removeTransfer(transfer),
               },
               {
                 icon: FiCheckCircle, variant: "success", size: "sm", tooltip: "Approve",
                 show: () => pending && hasPermission("stock-transfer.approve"),
-                onClick: () => act("Approve Stock Transfer?", `Approve ${r.transfer_no}? The goods move to the new store / location with new barcodes, and the transfer is locked.`,
-                  () => stockTransferService.approveTransfer(r.id), "Stock Transfer Approved Successfully"),
+                onClick: () => approveTransfer(transfer),
               },
             ]}
           />
         );
       },
     },
-  ], [hasPermission, act, router]);
+  ], [hasPermission, removeTransfer, approveTransfer, router]);
 
   return (
     <AccessRoute requiredPermissions={["stock-transfer.view", "stock-transfer.create", "stock-transfer.edit", "stock-transfer.delete", "stock-transfer.approve"]}>

@@ -1,5 +1,6 @@
 // hooks/useSuppliers.ts
 import { formatDate } from '@/lib/format';
+import { apiErrorMessage } from '@/lib/options';
 import { useState, useCallback, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import { supplierService, Supplier, SupplierFilters, PaginatedResponse } from '@/services/supplierService';
@@ -55,21 +56,18 @@ export const useSuppliers = () => {
   }, [pagination.pageIndex, pagination.pageSize, debouncedFilters]);
 
   
+  // dropdown lists of the supplier form
   const fetchLookups = useCallback(async () => {
-  try {
-    const [status, openingBalanceType] = await Promise.all([
-      lookupService.getLookupByType("active_status"),
-      lookupService.getLookupByType("transaction_type"),
-    ]);
-
-    setStatus(status);
-    setOpeningBalanceType(openingBalanceType);
-
-  } catch (err) {
-    console.error("Failed to fetch lookups", err);
-    toast.error("Failed to load lookup data");
-  }
-}, []);
+    try {
+      const statusList = await lookupService.getLookupByType("active_status");
+      const balanceTypeList = await lookupService.getLookupByType("transaction_type");
+      setStatus(statusList);
+      setOpeningBalanceType(balanceTypeList);
+    } catch (err) {
+      console.error("Failed to fetch lookups", err);
+      toast.error("Failed to load lookup data");
+    }
+  }, []);
 
   useEffect(() => {
     loadSuppliers();
@@ -127,7 +125,7 @@ export const useSuppliers = () => {
       await supplierService.softDeleteSupplier(id);
       toast.success('Supplier moved to trashed!');
       await loadSuppliers();
-    } catch (err) {
+    } catch {
       // Revert on error
       setSuppliers(previousSuppliers);
       toast.error('Failed to delete supplier');
@@ -151,7 +149,7 @@ export const useSuppliers = () => {
       await supplierService.forceDeleteSupplier(id);
       toast.success('Supplier deleted successfully!');
       await loadSuppliers();
-    } catch (err) {
+    } catch {
       // Revert on error
       setSuppliers(previousSuppliers);
       toast.error('Failed to delete supplier');
@@ -163,7 +161,7 @@ export const useSuppliers = () => {
       await supplierService.restoreSupplier(id);
       toast.success('Supplier restored successfully!');
       await loadSuppliers();
-    } catch (err) {
+    } catch {
       // Revert on error
       toast.error('Failed to restore supplier');
     }
@@ -196,15 +194,24 @@ export const useSuppliers = () => {
       handleCloseModal();
       await loadSuppliers();
       return true;
-    } catch (err: any) {
-      if (err?.response?.data?.errors) {
+    } catch (err) {
+      // validation errors are shown under their fields, any other error as a message
+      const error = err as { response?: { data?: { errors?: Record<string, string[] | string> } } };
+      const fieldErrors = error.response && error.response.data ? error.response.data.errors : undefined;
+
+      if (fieldErrors) {
         const errors: Record<string, string> = {};
-        Object.entries(err.response.data.errors).forEach(([field, messages]) => {
-          errors[field] = Array.isArray(messages) ? messages[0] : messages;
-        });
+        for (const field in fieldErrors) {
+          const messages = fieldErrors[field];
+          if (Array.isArray(messages)) {
+            errors[field] = messages[0];
+          } else {
+            errors[field] = messages;
+          }
+        }
         setBackendErrors(errors);
       } else {
-        toast.error(err?.response?.data?.message || 'Failed to save supplier');
+        toast.error(apiErrorMessage(err, 'Failed to save supplier'));
       }
       return false;
     } finally {

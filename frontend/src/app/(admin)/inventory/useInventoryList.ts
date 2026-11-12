@@ -1,7 +1,7 @@
 // Shared by the Inventory Stock and Inventory Barcode pages: rows, filters, paging and the store list
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
-import { api } from "@/lib/api";
+import { loadOptions, Option } from "@/lib/options";
 import { useDebounce } from "@/hooks/useDebounce";
 
 type Loader<T> = (filters: Record<string, string | number>) => Promise<{ data: T[]; total: number }>;
@@ -10,7 +10,7 @@ export const useInventoryList = <T,>(loader: Loader<T>) => {
   const [rows, setRows] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [stores, setStores] = useState<{ value: string; label: string }[]>([]);
+  const [stores, setStores] = useState<Option[]>([]);
   const [filters, setFilters] = useState<Record<string, string | number>>({});
   const debouncedFilters = useDebounce(filters, 300);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 });
@@ -33,8 +33,8 @@ export const useInventoryList = <T,>(loader: Loader<T>) => {
   }, [load]);
 
   useEffect(() => {
-    api.get("/configure/stores", { params: { status: 1 } })
-      .then((res) => setStores(res.data.data.data.map((s: any) => ({ value: String(s.id), label: s.name }))))
+    loadOptions("/configure/stores")
+      .then(setStores)
       .catch(() => {});
   }, []);
 

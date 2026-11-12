@@ -8,157 +8,250 @@ use Illuminate\Support\Facades\DB;
 // Inventory reports like parts_bazar inventory/stockReportViewInAmount
 class InventoryReportService
 {
-    // Stock Qty Report: one row per product + barcode with opening, in, out, closing and the purchase amount.
-    // "current" = only barcodes with stock in / out between the dates, "all" = every barcode with stock.
+    // Stock Qty Report (also used by the Stock Amount Report)
+    // One row per product + barcode with opening, in, out, closing stock and the purchase amount.
+    // show = "current": only barcodes with stock in / out between the dates
+    // show = "all":     every barcode that has any stock
     public function stockQty(array $filters): array
     {
-        $start = $filters['start_date'];
-        $end = $filters['end_date'];
+        $startDate = $filters['start_date'];
+        $endDate = $filters['end_date'];
 
-        $query = DB::table('inventories as i')
-            ->join('products as p', 'p.id', '=', 'i.product_id')
-            ->leftJoin('categories as c', 'c.id', '=', 'p.product_category_id')
-            ->leftJoin('brands as br', 'br.id', '=', 'p.brand_id')
-            ->leftJoin('inventory_barcodes as b', 'b.barcode', '=', 'i.barcode')
-            ->selectRaw('
-                SUM(CASE WHEN i.transaction_date < ? THEN i.stock_in - i.stock_out ELSE 0 END) AS opening_stock,
-                SUM(CASE WHEN i.transaction_date BETWEEN ? AND ? THEN i.stock_in ELSE 0 END) AS stock_in,
-                SUM(CASE WHEN i.transaction_date BETWEEN ? AND ? THEN i.stock_out ELSE 0 END) AS stock_out,
-                SUM(CASE WHEN i.transaction_date <= ? THEN i.stock_in - i.stock_out ELSE 0 END) AS closing_stock,
-                MIN(i.id) AS first_id',
-                [$start, $start, $end, $start, $end, $end]
+        $query = DB::table('inventories')
+            ->join('products', 'products.id', '=', 'inventories.product_id')
+            ->leftJoin('categories', 'categories.id', '=', 'products.product_category_id')
+            ->leftJoin('brands', 'brands.id', '=', 'products.brand_id')
+            ->leftJoin('inventory_barcodes', 'inventory_barcodes.barcode', '=', 'inventories.barcode')
+            ->select(
+                'inventories.product_id',
+                'inventories.barcode',
+                'products.name as product_name',
+                'products.part_number',
+                'categories.name as category_name',
+                'brands.name as brand_name',
+                'inventory_barcodes.purchase_price'
             )
-            ->addSelect(
-                'i.product_id', 'i.barcode', 'p.name as product_name', 'p.part_number',
-                'c.name as category_name', 'br.name as brand_name', 'b.purchase_price'
-            )
-            ->groupBy('i.product_id', 'i.barcode', 'p.name', 'p.part_number', 'c.name', 'br.name', 'b.purchase_price');
+            // opening = stock before the start date, closing = stock up to the end date
+            ->selectRaw('SUM(CASE WHEN inventories.transaction_date < ? THEN inventories.stock_in - inventories.stock_out ELSE 0 END) AS opening_stock', [$startDate])
+            ->selectRaw('SUM(CASE WHEN inventories.transaction_date BETWEEN ? AND ? THEN inventories.stock_in ELSE 0 END) AS stock_in', [$startDate, $endDate])
+            ->selectRaw('SUM(CASE WHEN inventories.transaction_date BETWEEN ? AND ? THEN inventories.stock_out ELSE 0 END) AS stock_out', [$startDate, $endDate])
+            ->selectRaw('SUM(CASE WHEN inventories.transaction_date <= ? THEN inventories.stock_in - inventories.stock_out ELSE 0 END) AS closing_stock', [$endDate])
+            ->selectRaw('MIN(inventories.id) AS first_id')
+            ->groupBy(
+                'inventories.product_id',
+                'inventories.barcode',
+                'products.name',
+                'products.part_number',
+                'categories.name',
+                'brands.name',
+                'inventory_barcodes.purchase_price'
+            );
 
-        if (Auth::check() && !Auth::user()->hasRole('Super Admin') && !empty(Auth::user()->company_id)) {
-            $query->where('i.company_id', Auth::user()->company_id);
+        // a company user can only see the stock of own company
+        $ownCompanyId = $this->ownCompanyId();
+        if ($ownCompanyId) {
+            $query->where('inventories.company_id', $ownCompanyId);
         }
 
-        $query
-            ->when($filters['company_id'] ?? null, fn($q, $v) => $q->where('i.company_id', $v))
-            ->when($filters['store_id'] ?? null, fn($q, $v) => $q->where('i.store_id', $v))
-            ->when($filters['location_id'] ?? null, fn($q, $v) => $q->where('i.location_id', $v))
-            ->when($filters['category_id'] ?? null, fn($q, $v) => $q->where('p.product_category_id', $v))
-            // parts_bazar "Product Type" (prod_brands) = sub category here
-            ->when($filters['sub_category_id'] ?? null, fn($q, $v) => $q->where('p.sub_category_id', $v))
-            ->when($filters['product_id'] ?? null, fn($q, $v) => $q->where('i.product_id', $v))
-            ->when($filters['barcode'] ?? null, fn($q, $v) => $q->where('i.barcode', $v));
+        if (!empty($filters['company_id'])) {
+            $query->where('inventories.company_id', $filters['company_id']);
+        }
+        if (!empty($filters['store_id'])) {
+            $query->where('inventories.store_id', $filters['store_id']);
+        }
+        if (!empty($filters['location_id'])) {
+            $query->where('inventories.location_id', $filters['location_id']);
+        }
+        if (!empty($filters['category_id'])) {
+            $query->where('products.product_category_id', $filters['category_id']);
+        }
+        // parts_bazar "Product Type" (prod_brands) = sub category here
+        if (!empty($filters['sub_category_id'])) {
+            $query->where('products.sub_category_id', $filters['sub_category_id']);
+        }
+        if (!empty($filters['product_id'])) {
+            $query->where('inventories.product_id', $filters['product_id']);
+        }
+        if (!empty($filters['barcode'])) {
+            $query->where('inventories.barcode', $filters['barcode']);
+        }
 
-        if (($filters['show'] ?? 'current') === 'current') {
+        $show = $filters['show'] ?? 'current';
+        if ($show == 'current') {
             $query->havingRaw('(stock_in <> 0 OR stock_out <> 0)');
         } else {
             $query->havingRaw('(opening_stock > 0 OR stock_in > 0 OR stock_out > 0 OR closing_stock > 0)');
         }
 
-        $rows = $query->orderBy('first_id')->get()->map(function ($row) {
-            $row->opening_stock = (float) $row->opening_stock;
-            $row->stock_in = (float) $row->stock_in;
-            $row->stock_out = (float) $row->stock_out;
-            $row->closing_stock = (float) $row->closing_stock;
-            $row->purchase_price = (float) $row->purchase_price;
-            $row->total_amount = round($row->closing_stock * $row->purchase_price, 2);
-            unset($row->first_id);
-            return $row;
-        });
+        // first stock entry first
+        $records = $query->orderBy('first_id')->get();
+
+        $rows = [];
+        foreach ($records as $record) {
+            $record->opening_stock = (float) $record->opening_stock;
+            $record->stock_in = (float) $record->stock_in;
+            $record->stock_out = (float) $record->stock_out;
+            $record->closing_stock = (float) $record->closing_stock;
+            $record->purchase_price = (float) $record->purchase_price;
+            $record->total_amount = round($record->closing_stock * $record->purchase_price, 2);
+            unset($record->first_id);
+            $rows[] = $record;
+        }
+
+        $storeName = null;
+        if (!empty($filters['store_id'])) {
+            $storeName = DB::table('stores')->where('id', $filters['store_id'])->value('name');
+        }
+
+        $locationName = null;
+        if (!empty($filters['location_id'])) {
+            $locationName = DB::table('locations')->where('id', $filters['location_id'])->value('name');
+        }
 
         return [
             'rows' => $rows,
             'company' => $this->company($filters['company_id'] ?? null),
-            'store' => !empty($filters['store_id']) ? DB::table('stores')->where('id', $filters['store_id'])->value('name') : null,
-            'location' => !empty($filters['location_id']) ? DB::table('locations')->where('id', $filters['location_id'])->value('name') : null,
+            'store' => $storeName,
+            'location' => $locationName,
         ];
     }
 
-    // Alert Quantity Report (parts_bazar inventory/alertQtyReport): products with stock entries
-    // whose all-time closing stock is at or under the product alert qty
-    public function alertQty(array $filters)
+    // Alert Quantity Report (parts_bazar inventory/alertQtyReport)
+    // Products that have stock entries and whose closing stock is at or under the product alert qty.
+    public function alertQty(array $filters): array
     {
-        return $this->productStockQuery($filters)
-            ->joinSub($this->stockSums(), 'st', 'st.product_id', '=', 'p.id')
-            ->whereRaw('COALESCE(p.alert_qty, 0) >= st.closing_stock')
-            ->addSelect('st.closing_stock', 'p.alert_qty')
-            ->orderBy('p.id')
-            ->get()
-            ->map(function ($row) {
-                $row->closing_stock = (float) $row->closing_stock;
-                $row->alert_qty = (float) $row->alert_qty;
-                return $row;
-            });
-    }
+        $query = $this->productQuery($filters);
 
-    // Out Of Stock Report (parts_bazar inventory/outOfStockReport): every product with no stock left,
-    // never bought products too
-    public function outOfStock(array $filters)
-    {
-        return $this->productStockQuery($filters)
-            ->leftJoinSub($this->stockSums(), 'st', 'st.product_id', '=', 'p.id')
-            ->whereRaw('COALESCE(st.closing_stock, 0) <= 0')
-            ->when($filters['company_id'] ?? null, fn($q, $v) => $q->where(fn($w) => $w->where('p.company_id', $v)->orWhereNull('p.company_id')))
-            ->orderBy('p.id')
-            ->get();
-    }
+        // only products that have stock entries
+        $query->joinSub($this->closingStockByProduct(), 'stock', 'stock.product_id', '=', 'products.id');
+        $query->whereRaw('COALESCE(products.alert_qty, 0) >= stock.closing_stock');
+        $query->addSelect('stock.closing_stock', 'products.alert_qty');
 
-    private function productStockQuery(array $filters)
-    {
-        $query = DB::table('products as p')
-            ->leftJoin('sub_categories as sc', 'sc.id', '=', 'p.sub_category_id')
-            ->leftJoin('brands as br', 'br.id', '=', 'p.brand_id')
-            ->whereNull('p.deleted_at')
-            ->select('p.id', 'p.name as product_name', 'p.part_number', 'sc.name as sub_category_name', 'br.name as brand_name');
+        $records = $query->orderBy('products.id')->get();
 
-        if ($companyId = $this->ownCompanyId()) {
-            $query->where(fn($q) => $q->where('p.company_id', $companyId)->orWhereNull('p.company_id'));
+        $rows = [];
+        foreach ($records as $record) {
+            $record->closing_stock = (float) $record->closing_stock;
+            $record->alert_qty = (float) $record->alert_qty;
+            $rows[] = $record;
         }
 
-        return $query
-            ->when($filters['sub_category_id'] ?? null, fn($q, $v) => $q->where('p.sub_category_id', $v))
-            ->when($filters['brand_id'] ?? null, fn($q, $v) => $q->where('p.brand_id', $v))
-            ->when($filters['product_id'] ?? null, fn($q, $v) => $q->where('p.id', $v));
+        return $rows;
     }
 
-    // all-time closing stock per product
-    private function stockSums()
+    // Out Of Stock Report (parts_bazar inventory/outOfStockReport)
+    // Every product with no stock left, products that were never bought too.
+    public function outOfStock(array $filters): array
     {
-        $query = DB::table('inventories')
-            ->selectRaw('product_id, SUM(stock_in - stock_out) AS closing_stock')
-            ->groupBy('product_id');
+        $query = $this->productQuery($filters);
 
-        if ($companyId = $this->ownCompanyId()) {
-            $query->where('company_id', $companyId);
+        // left join, so products with no stock entry are kept (their stock is 0)
+        $query->leftJoinSub($this->closingStockByProduct(), 'stock', 'stock.product_id', '=', 'products.id');
+        $query->whereRaw('COALESCE(stock.closing_stock, 0) <= 0');
+
+        // products with no company belong to every company
+        if (!empty($filters['company_id'])) {
+            $companyId = $filters['company_id'];
+            $query->where(function ($where) use ($companyId) {
+                $where->where('products.company_id', $companyId)->orWhereNull('products.company_id');
+            });
+        }
+
+        return $query->orderBy('products.id')->get()->all();
+    }
+
+    // products with the filters of the Alert Qty and Out Of Stock reports
+    private function productQuery(array $filters)
+    {
+        $query = DB::table('products')
+            ->leftJoin('sub_categories', 'sub_categories.id', '=', 'products.sub_category_id')
+            ->leftJoin('brands', 'brands.id', '=', 'products.brand_id')
+            ->whereNull('products.deleted_at')
+            ->select(
+                'products.id',
+                'products.name as product_name',
+                'products.part_number',
+                'sub_categories.name as sub_category_name',
+                'brands.name as brand_name'
+            );
+
+        // a company user sees own products and the products with no company
+        $ownCompanyId = $this->ownCompanyId();
+        if ($ownCompanyId) {
+            $query->where(function ($where) use ($ownCompanyId) {
+                $where->where('products.company_id', $ownCompanyId)->orWhereNull('products.company_id');
+            });
+        }
+
+        if (!empty($filters['sub_category_id'])) {
+            $query->where('products.sub_category_id', $filters['sub_category_id']);
+        }
+        if (!empty($filters['brand_id'])) {
+            $query->where('products.brand_id', $filters['brand_id']);
+        }
+        if (!empty($filters['product_id'])) {
+            $query->where('products.id', $filters['product_id']);
         }
 
         return $query;
     }
 
-    private function ownCompanyId()
+    // closing stock (all stock in - all stock out) of every product
+    private function closingStockByProduct()
     {
-        $user = Auth::user();
-        return $user && !$user->hasRole('Super Admin') && !empty($user->company_id) ? $user->company_id : null;
+        $query = DB::table('inventories')
+            ->select('product_id')
+            ->selectRaw('SUM(stock_in - stock_out) AS closing_stock')
+            ->groupBy('product_id');
+
+        $ownCompanyId = $this->ownCompanyId();
+        if ($ownCompanyId) {
+            $query->where('company_id', $ownCompanyId);
+        }
+
+        return $query;
     }
 
-    // product picker of the report search form: name or part number
+    // product picker of the report search forms: search by name or part number
     public function searchProducts(string $term)
     {
         $query = DB::table('products')
             ->whereNull('deleted_at')
-            ->where(fn($q) => $q->where('name', 'like', "%{$term}%")->orWhere('part_number', 'like', "%{$term}%"))
+            ->where(function ($where) use ($term) {
+                $where->where('name', 'like', "%{$term}%")->orWhere('part_number', 'like', "%{$term}%");
+            })
             ->select('id', 'name', 'part_number');
 
-        if (Auth::check() && !Auth::user()->hasRole('Super Admin') && !empty(Auth::user()->company_id)) {
-            $query->where('company_id', Auth::user()->company_id);
+        $ownCompanyId = $this->ownCompanyId();
+        if ($ownCompanyId) {
+            $query->where('company_id', $ownCompanyId);
         }
 
         return $query->orderBy('name')->limit(20)->get();
     }
 
-    // the report header: the picked company, else the user's own company
+    // the company shown in the report header: the picked company, or else the user's own company
     public function company($companyId = null)
     {
-        $companyId = $companyId ?: Auth::user()?->company_id;
-        return $companyId ? DB::table('companies')->where('id', $companyId)->select('name', 'address', 'phone', 'logo')->first() : null;
+        if (!$companyId && Auth::user()) {
+            $companyId = Auth::user()->company_id;
+        }
+
+        if (!$companyId) {
+            return null;
+        }
+
+        return DB::table('companies')->where('id', $companyId)->select('name', 'address', 'phone', 'logo')->first();
+    }
+
+    // company of the logged in user, null for a Super Admin (who can see every company)
+    public function ownCompanyId()
+    {
+        $user = Auth::user();
+        if (!$user || $user->hasRole('Super Admin') || empty($user->company_id)) {
+            return null;
+        }
+
+        return $user->company_id;
     }
 }
