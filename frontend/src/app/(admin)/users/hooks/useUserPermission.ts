@@ -1,237 +1,183 @@
-// hooks/useUserPermissions.ts
-import { useState, useCallback, useEffect } from 'react';
-import { toast } from 'react-toastify';
-import { permissionAssignToRoleService, Permission, User } from '@/services/permissionAssignToUserService';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
+// User Permissions page: pick the direct permissions of one user, filtered by module / menu / sub menu
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "react-toastify";
+import { useAuth } from "@/context/AuthContext";
+import { apiErrorMessage, Option } from "@/lib/options";
+import { filterPermissions, firstName, menuNames, moduleNames, nameOptions, subMenuNames } from "@/lib/permissionFilters";
+import { permissionAssignToUserService, Permission, User } from "@/services/permissionAssignToUserService";
 
 export const useUserPermissions = (userId: string) => {
   const router = useRouter();
   const { refreshUser, user: currentUser } = useAuth();
 
-  // Data state
   const [user, setUser] = useState<User | null>(null);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Filter state
-  const [selectedModule, setSelectedModule] = useState<string>("");
-  const [selectedMenu, setSelectedMenu] = useState<string>("");
-  const [selectedSubMenu, setSelectedSubMenu] = useState<string>("");
+  const [selectedModule, setSelectedModule] = useState("");
+  const [selectedMenu, setSelectedMenu] = useState("");
+  const [selectedSubMenu, setSelectedSubMenu] = useState("");
 
-  // Options for dropdowns
-  const [moduleOptions, setModuleOptions] = useState<string[]>([]);
-  const [menuOptions, setMenuOptions] = useState<string[]>([]);
-  const [subMenuOptions, setSubMenuOptions] = useState<string[]>([]);
+  useEffect(() => {
+    async function load() {
+      try {
+        setLoading(true);
+        const userResponse = await permissionAssignToUserService.getUser(Number(userId));
+        const permissionResponse = await permissionAssignToUserService.getAllPermissions();
+        const allPermissions = permissionResponse.data.items;
 
-  // Filtered permissions
-  const [filteredPermissions, setFilteredPermissions] = useState<Permission[]>([]);
+        setUser(userResponse.user);
+        setSelectedPermissions(userResponse.permissions);
+        setPermissions(allPermissions);
 
-  // Load user and permissions
-  const loadUserPermissions = useCallback(async () => {
-    try {
-      setLoading(true);
-      const [userRes, permissionsRes] = await Promise.all([
-        permissionAssignToRoleService.getUser(parseInt(userId)),
-        permissionAssignToRoleService.getAllPermissions({ per_page: 1000 })
-      ]);
-
-      setUser(userRes.user);
-      setSelectedPermissions(userRes.permissions || []);
-      processPermissions(permissionsRes.data.items || []);
-    } catch (err) {
-      toast.error('Failed to load user or permissions');
-      console.error('Error loading user permissions:', err);
-    } finally {
-      setLoading(false);
+        // start on the first module, its first menu and that menu's first sub menu
+        const firstModule = firstName(moduleNames(allPermissions));
+        const firstMenu = firstName(menuNames(allPermissions, firstModule));
+        setSelectedModule(firstModule);
+        setSelectedMenu(firstMenu);
+        setSelectedSubMenu(firstName(subMenuNames(allPermissions, firstModule, firstMenu)));
+      } catch {
+        toast.error("Failed to load user or permissions");
+      } finally {
+        setLoading(false);
+      }
     }
+    load();
   }, [userId]);
 
-  // Process permissions and extract options
-  const processPermissions = (perms: Permission[]) => {
-    setPermissions(perms);
+  // a new module starts on its first menu and that menu's first sub menu
+  function changeModule(module: string) {
+    const menu = firstName(menuNames(permissions, module));
+    setSelectedModule(module);
+    setSelectedMenu(menu);
+    setSelectedSubMenu(firstName(subMenuNames(permissions, module, menu)));
+  }
 
-    // Extract unique modules
-    const modules = [...new Set(perms.map(p => p.module_name || "Other"))];
-    setModuleOptions(modules);
+  // a new menu starts on its first sub menu
+  function changeMenu(menu: string) {
+    setSelectedMenu(menu);
+    setSelectedSubMenu(firstName(subMenuNames(permissions, selectedModule, menu)));
+  }
 
-    // Set default module selection if available
-    if (modules.length > 0 && !selectedModule) {
-      setSelectedModule(modules[0]);
+  function changeSubMenu(subMenu: string) {
+    setSelectedSubMenu(subMenu);
+  }
+
+  // options of the three filter dropdowns
+  const moduleOptions: Option[] = nameOptions(moduleNames(permissions));
+  let menuOptions: Option[] = [];
+  if (selectedModule) {
+    menuOptions = nameOptions(menuNames(permissions, selectedModule));
+  }
+  let subMenuOptions: Option[] = [];
+  if (selectedModule && selectedMenu) {
+    subMenuOptions = [{ value: "", label: "All Submenus" }];
+    for (const option of nameOptions(subMenuNames(permissions, selectedModule, selectedMenu))) {
+      subMenuOptions.push(option);
     }
-  };
+  }
 
-  // Update menu options when module changes
-  useEffect(() => {
-    if (!selectedModule) return;
+  const filteredPermissions = filterPermissions(permissions, selectedModule, selectedMenu, selectedSubMenu);
 
-    const menus = [
-      ...new Set(
-        permissions
-          .filter(p => (p.module_name || "Other") === selectedModule)
-          .map(p => p.menu_name || "General")
-      )
-    ];
-    setMenuOptions(menus);
-
-    // Reset menu and submenu selections
-    setSelectedMenu(menus.length > 0 ? menus[0] : "");
-    setSelectedSubMenu("");
-  }, [selectedModule, permissions]);
-
-  // Update submenu options when menu changes
-  useEffect(() => {
-    if (!selectedModule || !selectedMenu) return;
-
-    const submenus = [
-      ...new Set(
-        permissions
-          .filter(p =>
-            (p.module_name || "Other") === selectedModule &&
-            (p.menu_name || "General") === selectedMenu
-          )
-          .map(p => p.sub_menu_name || "Default")
-      )
-    ];
-    setSubMenuOptions(submenus);
-
-    // Reset submenu selection
-    setSelectedSubMenu(submenus.length > 0 ? submenus[0] : "");
-  }, [selectedModule, selectedMenu, permissions]);
-
-  // Update filtered permissions when any selection changes
-  useEffect(() => {
-    if (!selectedModule) {
-      setFilteredPermissions([]);
-      return;
+  let allFilteredSelected = filteredPermissions.length > 0;
+  for (const permission of filteredPermissions) {
+    if (!selectedPermissions.includes(permission.name)) {
+      allFilteredSelected = false;
     }
+  }
 
-    let filtered = permissions.filter(p =>
-      (p.module_name || "Other") === selectedModule
-    );
-
-    if (selectedMenu) {
-      filtered = filtered.filter(p =>
-        (p.menu_name || "General") === selectedMenu
-      );
+  function togglePermission(permissionName: string) {
+    if (selectedPermissions.includes(permissionName)) {
+      setSelectedPermissions(selectedPermissions.filter((name) => name !== permissionName));
+    } else {
+      setSelectedPermissions([...selectedPermissions, permissionName]);
     }
+  }
 
-    if (selectedSubMenu) {
-      filtered = filtered.filter(p =>
-        (p.sub_menu_name || "Default") === selectedSubMenu
-      );
-    }
-
-    setFilteredPermissions(filtered);
-  }, [selectedModule, selectedMenu, selectedSubMenu, permissions]);
-
-  // Permission selection methods
-  const togglePermission = (permissionName: string) => {
-    setSelectedPermissions(prev =>
-      prev.includes(permissionName)
-        ? prev.filter(p => p !== permissionName)
-        : [...prev, permissionName]
-    );
-  };
-
-  const selectAllFiltered = () => {
-    const newPermissions = [...selectedPermissions];
-    filteredPermissions.forEach(perm => {
-      if (!newPermissions.includes(perm.name)) {
-        newPermissions.push(perm.name);
+  function selectAllFiltered() {
+    const names = [...selectedPermissions];
+    for (const permission of filteredPermissions) {
+      if (!names.includes(permission.name)) {
+        names.push(permission.name);
       }
-    });
-    setSelectedPermissions(newPermissions);
-  };
+    }
+    setSelectedPermissions(names);
+  }
 
-  const deselectAllFiltered = () => {
-    const filteredPermNames = filteredPermissions.map(p => p.name);
-    setSelectedPermissions(prev =>
-      prev.filter(perm => !filteredPermNames.includes(perm))
-    );
-  };
+  function deselectAllFiltered() {
+    const names: string[] = [];
+    for (const name of selectedPermissions) {
+      let isFiltered = false;
+      for (const permission of filteredPermissions) {
+        if (permission.name === name) {
+          isFiltered = true;
+        }
+      }
+      if (!isFiltered) {
+        names.push(name);
+      }
+    }
+    setSelectedPermissions(names);
+  }
 
-  const selectAllPermissions = () => {
-    const allPerms = permissions.map(p => p.name);
-    setSelectedPermissions(allPerms);
-  };
+  function selectAllPermissions() {
+    const names: string[] = [];
+    for (const permission of permissions) {
+      names.push(permission.name);
+    }
+    setSelectedPermissions(names);
+  }
 
-  const deselectAllPermissions = () => {
+  function deselectAllPermissions() {
     setSelectedPermissions([]);
-  };
+  }
 
-  // Check if all filtered permissions are selected
-  const areAllFilteredSelected = () => {
-    if (filteredPermissions.length === 0) return false;
-    return filteredPermissions.every(perm =>
-      selectedPermissions.includes(perm.name)
-    );
-  };
-
-  // Save permissions
-  const handleSave = async () => {
+  async function handleSave() {
     try {
       setSaving(true);
-      await permissionAssignToRoleService.assignPermissions(parseInt(userId), {
-        permissions: selectedPermissions
-      });
-      
+      await permissionAssignToUserService.assignPermissions(Number(userId), selectedPermissions);
       toast.success("Permissions updated successfully");
 
-      // Refresh current user if they updated their own permissions
-      if (currentUser && currentUser.id === parseInt(userId)) {
+      // when the logged in user changed its own permissions, its menus and buttons are loaded again
+      if (currentUser && currentUser.id === Number(userId)) {
         await refreshUser();
       }
-      
+
       router.push("/users");
-      return true;
-    } catch (err: any) {
-      toast.error(
-        err.response?.data?.message || "Failed to update permissions"
-      );
-      return false;
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Failed to update permissions"));
     } finally {
       setSaving(false);
     }
-  };
-
-  // Initialize
-  useEffect(() => {
-    loadUserPermissions();
-  }, [loadUserPermissions]);
+  }
 
   return {
-    // State
     user,
-    permissions,
-    selectedPermissions,
     loading,
     saving,
+    selectedPermissions,
     filteredPermissions,
-    
-    // Filter state
+    allFilteredSelected,
+
     selectedModule,
     selectedMenu,
     selectedSubMenu,
     moduleOptions,
     menuOptions,
     subMenuOptions,
-    
-    // Actions
-    setSelectedModule,
-    setSelectedMenu,
-    setSelectedSubMenu,
+
+    changeModule,
+    changeMenu,
+    changeSubMenu,
     togglePermission,
     selectAllFiltered,
     deselectAllFiltered,
     selectAllPermissions,
     deselectAllPermissions,
-    areAllFilteredSelected,
     handleSave,
-    
-    // Navigation
     router,
   };
 };

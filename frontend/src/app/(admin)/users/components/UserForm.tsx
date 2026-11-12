@@ -62,26 +62,23 @@ export function UserForm({
   });
 
 
-  /* ----------------------------------------
-   * Backend validation errors
-   * ---------------------------------------- */
+  // the API validation errors are shown under their fields
   useEffect(() => {
-    if (!backendErrors) return;
+    if (!backendErrors) {
+      return;
+    }
 
     clearErrors();
-    Object.entries(backendErrors).forEach(([field, message]) => {
-      setError(field as keyof UserFormData, {
-        type: "server",
-        message: Array.isArray(message) ? message[0] : message,
-      });
-    });
+    for (const field in backendErrors) {
+      setError(field as keyof UserFormData, { type: "server", message: backendErrors[field] });
+    }
   }, [backendErrors, clearErrors, setError]);
 
-  /* ----------------------------------------
-   * Edit mode: load user once
-   * ---------------------------------------- */
+  // edit: the form starts with the user's values, the password stays empty
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      return;
+    }
 
     reset({
       name: user.name ?? "",

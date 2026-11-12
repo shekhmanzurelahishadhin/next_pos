@@ -3,7 +3,6 @@ import { useMemo } from "react";
 import ActionButtons from "@/components/ui/button/ActionButton";
 import { FiEye, FiEdit, FiTrash } from "@/icons/index";
 import { Permission } from "@/services/permissionService";
-import { ColumnMeta as RTColumnMeta } from '@tanstack/react-table';
 
 declare module '@tanstack/react-table' {
   interface ColumnMeta<TData, TValue> {

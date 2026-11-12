@@ -1,75 +1,34 @@
-// services/permissionAssignToRoleService.ts
+// User Permissions page: the direct permissions of one user
 import { api } from "@/lib/api";
+import { ListResponse } from "@/services/roleService";
+import { Permission } from "@/services/permissionAssignToRoleService";
 
-export interface Permission {
-  id: number;
-  name: string;
-  guard_name: string;
-  module_name?: string;
-  menu_name?: string;
-  sub_menu_name?: string;
-  created_at?: string;
-  updated_at?: string;
-}
+export type { Permission };
 
 export interface User {
   id: number;
   name: string;
   email: string;
-  permissions?: string[];
   created_at?: string;
   updated_at?: string;
 }
 
-export interface PaginatedResponse<T> {
-  data: {
-    current_page: number;
-    per_page: number;
-    total?: number;
-    items: T[];
-  };
-  total: number;
-  current_page: number;
-  per_page: number;
-  total_pages?: number;
-}
-
-export interface PermissionFilters {
-  search?: string;
-  page?: number;
-  per_page?: number;
-  module_name?: string;
-  menu_name?: string;
-  sub_menu_name?: string;
-}
-
-export interface AssignPermissionsDTO {
-  permissions: string[];
-}
-
-class PermissionAssignToRoleService {
+class PermissionAssignToUserService {
+  // the user and the names of its direct permissions
   async getUser(id: number): Promise<{ user: User; permissions: string[] }> {
     const response = await api.get(`/users/${id}/permissions`);
     return response.data;
   }
 
-  async getAllPermissions(filters: PermissionFilters = {}): Promise<PaginatedResponse<Permission>> {
-    const params = new URLSearchParams();
-    
-    if (filters.search) params.append('search', filters.search);
-    if (filters.page) params.append('page', filters.page.toString());
-    if (filters.per_page) params.append('per_page', filters.per_page.toString());
-    if (filters.module_name) params.append('module_name', filters.module_name);
-    if (filters.menu_name) params.append('menu_name', filters.menu_name);
-    if (filters.sub_menu_name) params.append('sub_menu_name', filters.sub_menu_name);
-    
-    const response = await api.get(`/permissions?${params}`);
+  async getAllPermissions(): Promise<ListResponse<Permission>> {
+    const response = await api.get("/permissions", { params: { per_page: 1000 } });
     return response.data;
   }
 
-  async assignPermissions(userId: number, data: AssignPermissionsDTO): Promise<void> {
-    await api.post(`/users/${userId}/permissions`, data);
+  // the user gets exactly these direct permissions, the rest are taken away
+  async assignPermissions(userId: number, permissionNames: string[]): Promise<void> {
+    await api.post(`/users/${userId}/permissions`, { permissions: permissionNames });
   }
 }
 
-export const permissionAssignToRoleService = new PermissionAssignToRoleService();
+export const permissionAssignToUserService = new PermissionAssignToUserService();

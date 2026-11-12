@@ -68,9 +68,7 @@ export function PermissionForm({
   const watchedModuleId = watch("module_id");
   const watchedMenuId = watch("menu_id");
 
-  /* ----------------------------------------
-   * Handle module change
-   * ---------------------------------------- */
+  // a new module loads its menus; on create the menu and sub menu start empty again
   useEffect(() => {
     if (!watchedModuleId) {
       setValue("menu_id", null);
@@ -78,50 +76,43 @@ export function PermissionForm({
       return;
     }
 
-
     fetchMenus(watchedModuleId);
     if (mode === "create") {
       setValue("menu_id", null);
       setValue("sub_menu_id", null);
     }
-  }, [watchedModuleId, setValue]);
+  }, [watchedModuleId, setValue, fetchMenus, mode]);
 
-  /* ----------------------------------------
-   * Handle menu change
-   * ---------------------------------------- */
+  // a new menu loads its sub menus; on create the sub menu starts empty again
   useEffect(() => {
     if (!watchedMenuId) {
       setValue("sub_menu_id", null);
       return;
     }
 
-
     fetchSubmenus(watchedMenuId);
     if (mode === "create") {
       setValue("sub_menu_id", null);
     }
-  }, [watchedMenuId, setValue]);
+  }, [watchedMenuId, setValue, fetchSubmenus, mode]);
 
-  /* ----------------------------------------
-   * Backend validation errors
-   * ---------------------------------------- */
+  // the API validation errors are shown under their fields
   useEffect(() => {
-    if (!backendErrors) return;
+    if (!backendErrors) {
+      return;
+    }
 
     clearErrors();
-    Object.entries(backendErrors).forEach(([field, message]) => {
-      setError(field as keyof PermissionFormData, {
-        type: "server",
-        message: Array.isArray(message) ? message[0] : message,
-      });
-    });
+    for (const field in backendErrors) {
+      setError(field as keyof PermissionFormData, { type: "server", message: backendErrors[field] });
+    }
   }, [backendErrors, clearErrors, setError]);
 
-  /* ----------------------------------------
-   * Edit mode: load permission once
-   * ---------------------------------------- */
+  // edit: the form starts with the permission's values
   useEffect(() => {
-    if (!permission) return;
+    if (!permission) {
+      return;
+    }
 
     reset({
       name: permission.name ?? "",

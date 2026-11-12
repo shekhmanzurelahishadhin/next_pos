@@ -24,7 +24,7 @@ interface PermissionModalProps {
   submenus: { value: number; label: string }[];
   loadingModules: boolean;
   loadingMenus: boolean;
-  loadingSubmenus: boolean; 
+  loadingSubmenus: boolean;
   fetchMenus: (moduleId: number | null) => void;
   fetchSubmenus: (menuId: number | null) => void;
 }
@@ -36,36 +36,31 @@ export function PermissionModal({
   saving,
   onClose,
   onSave,
-  backendErrors, 
+  backendErrors,
 
   modules,
   menus,
-  submenus, 
+  submenus,
   loadingModules,
   loadingMenus,
   loadingSubmenus,
   fetchMenus,
   fetchSubmenus
 }: PermissionModalProps) {
-  const getTitle = () => {
-    switch (mode) {
-      case 'view': return 'Permission Details';
-      case 'edit': return 'Edit Permission';
-      case 'create': return 'Add New Permission';
-      default: return 'Permission';
-    }
-  };
-
-  const getModalSize = () => {
-    return mode === 'view' ? 'max-w-2xl' : 'max-w-md';
-  };
+  let title = "Add New Permission";
+  if (mode === "view") {
+    title = "Permission Details";
+  } else if (mode === "edit") {
+    title = "Edit Permission";
+  }
+  const modalSize = mode === "view" ? "max-w-2xl" : "max-w-md";
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      className={getModalSize()}
-      title={getTitle()}
+      className={modalSize}
+      title={title}
       footer={
       <>
         {mode === 'view' ? (
@@ -116,7 +111,7 @@ export function PermissionModal({
 
             modules={modules}
             menus={menus}
-            submenus={submenus} 
+            submenus={submenus}
             loadingModules={loadingModules}
             loadingMenus={loadingMenus}
             loadingSubmenus={loadingSubmenus}

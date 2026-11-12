@@ -12,7 +12,7 @@ interface RoleModalProps {
   saving: boolean;
   onClose: () => void;
   onSave: (roleData: { name: string }) => void;
-  backendErrors?: Record<string, string>; // Add this prop
+  backendErrors?: Record<string, string>;
 }
 
 export function RoleModal({
@@ -22,27 +22,22 @@ export function RoleModal({
   saving,
   onClose,
   onSave,
-  backendErrors, // Add this prop
+  backendErrors,
 }: RoleModalProps) {
-  const getTitle = () => {
-    switch (mode) {
-      case 'view': return 'Role Details';
-      case 'edit': return 'Edit Role';
-      case 'create': return 'Add New Role';
-      default: return 'Role';
-    }
-  };
-
-  const getModalSize = () => {
-    return mode === 'view' ? 'max-w-2xl' : 'max-w-md';
-  };
+  let title = "Add New Role";
+  if (mode === "view") {
+    title = "Role Details";
+  } else if (mode === "edit") {
+    title = "Edit Role";
+  }
+  const modalSize = mode === "view" ? "max-w-2xl" : "max-w-md";
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      className={getModalSize()}
-      title={getTitle()}
+      className={modalSize}
+      title={title}
       footer={
       <>
         {mode === 'view' ? (

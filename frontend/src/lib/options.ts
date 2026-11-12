@@ -69,6 +69,26 @@ export function apiErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+// The validation errors of a failed save as { field: first message }, empty when there are none
+export function apiFieldErrors(err: unknown): Record<string, string> {
+  const error = err as { response?: { data?: { errors?: Record<string, string[] | string> } } };
+  const fieldErrors: Record<string, string> = {};
+  const errors = error.response?.data?.errors;
+  if (!errors) {
+    return fieldErrors;
+  }
+
+  for (const field in errors) {
+    const messages = errors[field];
+    if (Array.isArray(messages)) {
+      fieldErrors[field] = messages[0];
+    } else {
+      fieldErrors[field] = messages;
+    }
+  }
+  return fieldErrors;
+}
+
 // a number typed in an input; empty, not a number or below 0 counts as 0
 export function inputNumber(value: string | number | null | undefined): number {
   const number = parseFloat(String(value ?? ""));

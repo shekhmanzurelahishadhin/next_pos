@@ -14,17 +14,17 @@ interface RoleFormProps {
   mode: 'create' | 'edit';
   saving: boolean;
   onSubmit: (roleData: { name: string }) => void;
-  backendErrors?: Record<string, string>; // Add backend errors prop
+  backendErrors?: Record<string, string>;
 }
 
-export function RoleForm({ role, mode, saving, onSubmit, backendErrors }: RoleFormProps) {
+export function RoleForm({ role, saving, onSubmit, backendErrors }: RoleFormProps) {
   const {
     register,
     handleSubmit,
     formState: { errors },
     reset,
-    setError, // Add setError from react-hook-form
-    clearErrors, // Add clearErrors
+    setError,
+    clearErrors,
   } = useForm<RoleFormData>({
     mode: "onChange",
     defaultValues: {
@@ -32,34 +32,25 @@ export function RoleForm({ role, mode, saving, onSubmit, backendErrors }: RoleFo
     }
   });
 
-  // Handle backend errors
+  // the API validation errors are shown under their fields
   useEffect(() => {
-    if (backendErrors) {
-      // Clear existing errors first
-      clearErrors();
-      
-      // Set backend errors on the form
-      Object.entries(backendErrors).forEach(([field, message]) => {
-        setError(field as keyof RoleFormData, {
-          type: 'server',
-          message: Array.isArray(message) ? message[0] : message
-        });
-      });
+    if (!backendErrors) {
+      return;
     }
-  }, [backendErrors, setError, clearErrors]);
 
+    clearErrors();
+    for (const field in backendErrors) {
+      setError(field as keyof RoleFormData, { type: "server", message: backendErrors[field] });
+    }
+  }, [backendErrors, clearErrors, setError]);
+
+  // edit: the form starts with the role's name
   useEffect(() => {
-    reset({
-      name: role?.name || '',
-    });
+    reset({ name: role ? role.name : "" });
   }, [role, reset]);
 
-  const onFormSubmit = (data: RoleFormData) => {
-    onSubmit(data);
-  };
-
   return (
-    <form id="role-form" onSubmit={handleSubmit(onFormSubmit)}>
+    <form id="role-form" onSubmit={handleSubmit(onSubmit)}>
       <div className="space-y-3">
         <div>
           <Label htmlFor="name" required>Role Name</Label>

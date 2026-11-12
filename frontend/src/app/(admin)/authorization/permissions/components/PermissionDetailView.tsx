@@ -1,6 +1,5 @@
 "use client";
 import DetailRow, { DetailGrid } from "@/components/ui/detail/DetailRow";
-import Badge from "@/components/ui/badge/Badge";
 import { Permission } from "@/services/permissionService";
 import { formatDateTime } from "@/lib/format";
 
@@ -9,7 +8,6 @@ interface PermissionDetailViewProps {
 }
 
 export function PermissionDetailView({ permission }: PermissionDetailViewProps) {
-
   return (
     <DetailGrid>
       <DetailRow label="Permission Name" value={permission.name} />

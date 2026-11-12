@@ -1,44 +1,66 @@
 <?php
 
-
 namespace App\Services;
-
 
 use Spatie\Permission\Models\Role;
 
+// Role Setup: list, create, update and delete roles
 class RoleService
 {
-    public function getRoles($filters = [], $perPage, $columns = ['*'])
+    // Roles with the filters of the list page; all of them when no per page is given (for the role dropdowns)
+    public function getRoles(array $filters, $perPage, $columns = ['*'])
     {
         $query = Role::query()->select($columns);
 
-        $query
-            ->when($filters['name'] ?? null, fn($q, $name) => $q->where('name', 'like', "%{$name}%"))
-            ->when($filters['guard_name'] ?? null, fn($q, $guard_name) => $q->where('guard_name', 'like', "%{$guard_name}%"))
-            ->when($filters['created_at'] ?? null, fn($q, $created_at) => $q->whereDate('created_at', date('Y-m-d', strtotime($created_at))))
-            ->when($filters['updated_at'] ?? null, fn($q, $updated_at) => $q->whereDate('updated_at', date('Y-m-d', strtotime($updated_at))));
+        if (!empty($filters['name'])) {
+            $query->where('name', 'like', '%' . $filters['name'] . '%');
+        }
+        if (!empty($filters['guard_name'])) {
+            $query->where('guard_name', 'like', '%' . $filters['guard_name'] . '%');
+        }
+        if (!empty($filters['created_at'])) {
+            $query->whereDate('created_at', date('Y-m-d', strtotime($filters['created_at'])));
+        }
+        if (!empty($filters['updated_at'])) {
+            $query->whereDate('updated_at', date('Y-m-d', strtotime($filters['updated_at'])));
+        }
+
         $query->orderBy('id', 'desc');
 
-        // Return paginated if perPage is provided, else all
-        return $perPage ? $query->paginate($perPage) : $query->get();
+        if ($perPage) {
+            return $query->paginate($perPage);
+        }
+        return $query->get();
     }
 
     public function createRole(array $data)
     {
-        // Force guard_name to 'web' if not provided
+        // every role is for the web guard
         $data['guard_name'] = 'web';
 
         return Role::create($data);
     }
 
-    public function updateRole($role, $data)
+    public function updateRole(Role $role, array $data)
     {
         $role->update($data);
         return $role;
     }
 
-    public function deleteRole($role)
+    public function deleteRole(Role $role)
     {
-        return $role->delete();
+        $role->delete();
+    }
+
+    // Names of the permissions this role has
+    public function getPermissionNames(Role $role)
+    {
+        return $role->permissions->pluck('name');
+    }
+
+    // Give the role exactly these permissions (by name), the rest are taken away
+    public function assignPermissions(Role $role, array $permissionNames)
+    {
+        $role->syncPermissions($permissionNames);
     }
 }

@@ -35,7 +35,7 @@ export function UserModal({
   saving,
   onClose,
   onSave,
-  backendErrors, 
+  backendErrors,
 
   companies,
   roles,
@@ -43,25 +43,20 @@ export function UserModal({
   loadingRoles,
   formatDate,
 }: UserModalProps) {
-  const getTitle = () => {
-    switch (mode) {
-      case 'view': return 'User Details';
-      case 'edit': return 'Edit User';
-      case 'create': return 'Add New User';
-      default: return 'User';
-    }
-  };
-
-  const getModalSize = () => {
-    return 'max-w-2xl';
-  };
+  let title = "Add New User";
+  if (mode === "view") {
+    title = "User Details";
+  } else if (mode === "edit") {
+    title = "Edit User";
+  }
+  const modalSize = "max-w-2xl";
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      className={getModalSize()}
-      title={getTitle()}
+      className={modalSize}
+      title={title}
       footer={
       <>
         {mode === 'view' ? (
@@ -99,8 +94,8 @@ export function UserModal({
     >
       <div>
         {mode === 'view' && user && (
-          <UserDetailView 
-          user={user} 
+          <UserDetailView
+          user={user}
           formatDate={formatDate}
            />
         )}

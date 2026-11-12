@@ -40,15 +40,15 @@ const UserPermissionsPage = () => {
     menuOptions,
     subMenuOptions,
     
-    setSelectedModule,
-    setSelectedMenu,
-    setSelectedSubMenu,
+    changeModule,
+    changeMenu,
+    changeSubMenu,
     togglePermission,
     selectAllFiltered,
     deselectAllFiltered,
     selectAllPermissions,
     deselectAllPermissions,
-    areAllFilteredSelected,
+    allFilteredSelected,
     handleSave,
     router,
   } = useUserPermissions(userId as string);
@@ -136,11 +136,8 @@ const UserPermissionsPage = () => {
                   </label>
                   <ReactSelect
                     value={selectedModule}
-                    onChange={(value: string | number | null) => setSelectedModule(value === null ? "" : String(value))}
-                    options={moduleOptions.map(module => ({
-                      value: module,
-                      label: module
-                    }))}
+                    onChange={(value) => changeModule(value ? String(value) : "")}
+                    options={moduleOptions}
                     placeholder="Select Module"
                     isClearable
                   />
@@ -155,11 +152,8 @@ const UserPermissionsPage = () => {
                   </label>
                   <ReactSelect
                     value={selectedMenu}
-                    onChange={(value: string | number | null) => setSelectedMenu(value === null ? "" : String(value))}
-                    options={menuOptions.map(menu => ({
-                      value: menu,
-                      label: menu
-                    }))}
+                    onChange={(value) => changeMenu(value ? String(value) : "")}
+                    options={menuOptions}
                     placeholder="Select Menu"
                     isDisabled={!selectedModule}
                     isClearable
@@ -175,14 +169,8 @@ const UserPermissionsPage = () => {
                   </label>
                   <ReactSelect
                     value={selectedSubMenu}
-                    onChange={(value: string | number | null) => setSelectedSubMenu(value === null ? "" : String(value))}
-                    options={[
-                      { value: "", label: "All Submenus" },
-                      ...subMenuOptions.map(submenu => ({
-                        value: submenu,
-                        label: submenu === "Default" ? "General" : submenu,
-                      }))
-                    ]}
+                    onChange={(value) => changeSubMenu(value ? String(value) : "")}
+                    options={subMenuOptions}
                     placeholder="Select Submenu"
                     isDisabled={!selectedMenu}
                     isClearable
@@ -222,11 +210,11 @@ const UserPermissionsPage = () => {
                   </div>
                   <div className="flex items-center justify-center gap-2 mt-3 pt-3 border-t border-blue-100 dark:border-blue-800/50">
                     <Checkbox
-                      checked={areAllFilteredSelected()}
-                      onChange={() => areAllFilteredSelected() ? deselectAllFiltered() : selectAllFiltered()}
+                      checked={allFilteredSelected}
+                      onChange={allFilteredSelected ? deselectAllFiltered : selectAllFiltered}
                       label={
                         <span className="text-xs text-gray-600 dark:text-gray-400">
-                          {areAllFilteredSelected() ? "All selected" : "Not all selected"}
+                          {allFilteredSelected ? "All selected" : "Not all selected"}
                         </span>
                       }
                       disabled={filteredPermissions.length === 0}
@@ -267,26 +255,26 @@ const UserPermissionsPage = () => {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {filteredPermissions.map(perm => (
+                  {filteredPermissions.map((permission) => (
                     <div
-                      key={perm.name}
+                      key={permission.name}
                       className={`p-4 rounded-lg border cursor-pointer transition-all duration-200 ${
-                        selectedPermissions.includes(perm.name)
+                        selectedPermissions.includes(permission.name)
                           ? "bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700 shadow-sm"
                           : "bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600"
                       }`}
-                      onClick={() => togglePermission(perm.name)}
+                      onClick={() => togglePermission(permission.name)}
                     >
                       <div className="flex items-start gap-3">
                         <div className="mt-0.5">
                           <Checkbox
-                            checked={selectedPermissions.includes(perm.name)}
-                            onChange={() => togglePermission(perm.name)}
+                            checked={selectedPermissions.includes(permission.name)}
+                            onChange={() => togglePermission(permission.name)}
                           />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 dark:text-white mb-2">
-                            {perm.name}
+                            {permission.name}
                           </p>
                         </div>
                       </div>
@@ -322,10 +310,10 @@ const UserPermissionsPage = () => {
                 </div>
               ) : (
                 <div className="space-y-3 max-h-96 overflow-y-auto pr-2 scrollbar-hide">
-                  {selectedPermissions.map(permName => {        
+                  {selectedPermissions.map((permissionName) => {
                     return (
                       <div
-                        key={permName}
+                        key={permissionName}
                         className="p-4 bg-green-50 dark:bg-green-900/10 border border-green-200 dark:border-green-800 rounded-lg group hover:border-green-300 dark:hover:border-green-700 transition-colors"
                       >
                         <div className="flex items-start gap-3">
@@ -335,10 +323,10 @@ const UserPermissionsPage = () => {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between mb-2">
                               <p className="text-sm font-medium text-gray-900 dark:text-white">
-                                {permName}
+                                {permissionName}
                               </p>
                               <button
-                                onClick={() => togglePermission(permName)}
+                                onClick={() => togglePermission(permissionName)}
                                 className="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 opacity-0 group-hover:opacity-100 transition-opacity"
                               >
                                 Remove

@@ -7,18 +7,15 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\authorization\permission\CreatePermissionRequest;
 use App\Http\Requests\authorization\permission\UpdatePermissionRequest;
 use App\Http\Resources\authorization\PermissionResource;
-use App\Models\authorization\Menu;
-use App\Models\authorization\Module;
-use App\Models\authorization\PermissionModel;
-use App\Models\authorization\SubMenu;
+use App\Services\PermissionService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
-use App\Services\PermissionService;
 use Spatie\Permission\Models\Permission;
 
+// Permission Setup, and the module / menu / sub menu lists of its form
 class PermissionController extends Controller
 {
-    public function __construct()
+    public function __construct(private PermissionService $service)
     {
         $this->middleware('permission:permission.create|permission.view|permission.edit|permission.delete')->only('index');
         $this->middleware('permission:permission.create')->only('store');
@@ -26,123 +23,78 @@ class PermissionController extends Controller
         $this->middleware('permission:permission.delete')->only('destroy');
     }
 
-    public function index(Request $request, PermissionService $permissionService)
+    public function index(Request $request)
     {
         try {
-            $perPage = $request->get('per_page'); // can be null
-            $filters = $request->only('name','module_name','menu_name','sub_menu_name','created_at','updated_at');
+            $filters = $request->only('name', 'module_name', 'menu_name', 'sub_menu_name', 'created_at', 'updated_at');
+            $permissions = $this->service->getPermissions($filters, $request->get('per_page'));
 
-            $permissions = $permissionService->getPermission($filters, $perPage);
-
-            if ($permissions instanceof \Illuminate\Pagination\LengthAwarePaginator) {
-                // Paginated response
-                $data = [
-                    'items' => PermissionResource::collection($permissions->items()),
-                    'total' => $permissions->total(),
-                    'current_page' => $permissions->currentPage(),
-                    'per_page' => $permissions->perPage(),
-                ];
-            }else {
-                // Collection response (no pagination)
-                $data = [
-                    'items' => PermissionResource::collection($permissions),
-                    'total' => $permissions->count(),
-                    'current_page' => 1,
-                    'per_page' => $permissions->count(),
-                ];
-            }
+            $data = [
+                'items' => PermissionResource::collection($permissions->items()),
+                'total' => $permissions->total(),
+                'current_page' => $permissions->currentPage(),
+                'per_page' => $permissions->perPage(),
+            ];
 
             return ApiResponse::success($data, 'Permissions retrieved successfully');
-
         } catch (\Exception $e) {
-            return ApiResponse::serverError('Failed to retrieve permission');
+            return $this->errorResponse($e, 'Failed to retrieve permission');
         }
     }
 
-    public function store(CreatePermissionRequest $request,  PermissionService $permissionService)
+    public function store(CreatePermissionRequest $request)
     {
         try {
-            $validatedData = $request->validated();
-
-            $permission = $permissionService->createPermission($validatedData);
-
-            return ApiResponse::success(
-                new PermissionResource($permission),
-                'Permission created successfully',
-                201
-            );
-
+            $permission = $this->service->createPermission($request->validated());
+            return ApiResponse::success(new PermissionResource($permission), 'Permission created successfully', 201);
         } catch (\Exception $e) {
-            return ApiResponse::serverError('Failed to create permission');
+            return $this->errorResponse($e, 'Failed to create permission');
         }
     }
 
-    public function update(UpdatePermissionRequest $request, PermissionService $permissionService,  Permission $permission)
+    public function update(UpdatePermissionRequest $request, Permission $permission)
     {
         try {
-            $permission = $permissionService->updatePermission($permission, $request->validated());
-
-            return ApiResponse::success(
-                new PermissionResource($permission),
-                'Permission updated successfully'
-            );
-
+            $permission = $this->service->updatePermission($permission, $request->validated());
+            return ApiResponse::success(new PermissionResource($permission), 'Permission updated successfully');
         } catch (\Exception $e) {
-            return ApiResponse::serverError('Failed to update permission');
+            return $this->errorResponse($e, 'Failed to update permission');
         }
     }
 
-    public function destroy(PermissionService $permissionService, Permission $permission)
+    public function destroy(Permission $permission)
     {
         try {
-            $deleted = $permissionService->deletePermission($permission);
-
-            if ($deleted) {
-                return ApiResponse::success(
-                    null,
-                    'Permission permanently deleted'
-                );
-            }
-
-            return ApiResponse::error(
-                'Permission is not in trash',
-                400
-            );
-
-        } catch (ModelNotFoundException $e) {
-            return ApiResponse::notFound('Permission not found');
+            $this->service->deletePermission($permission);
+            return ApiResponse::success(null, 'Permission permanently deleted');
         } catch (\Exception $e) {
-            return ApiResponse::serverError('Failed to delete permission');
+            return $this->errorResponse($e, 'Failed to delete permission');
         }
     }
+
     public function modules()
     {
-        return response()->json(Module::select('id', 'name')->get());
+        return response()->json($this->service->getModules());
     }
 
     public function menus(Request $request)
     {
-        $moduleId = $request->query('module_id');
-
-        $query = Menu::select('id', 'name', 'module_id');
-
-        if ($moduleId) {
-            $query->where('module_id', $moduleId);
-        }
-
-        return response()->json($query->get());
+        return response()->json($this->service->getMenus($request->query('module_id')));
     }
+
     public function subMenus(Request $request)
     {
-        $menuId = $request->query('menu_id');
-
-        $query = SubMenu::select('id', 'name', 'menu_id');
-
-        if ($menuId) {
-            $query->where('menu_id', $menuId);
-        }
-
-        return response()->json($query->get());
+        return response()->json($this->service->getSubMenus($request->query('menu_id')));
     }
 
+    // Not found goes back as 404, any other error is logged and the general message is sent
+    private function errorResponse(\Exception $e, string $message)
+    {
+        if ($e instanceof ModelNotFoundException) {
+            return ApiResponse::notFound('Permission not found');
+        }
+
+        report($e);
+        return ApiResponse::serverError($message);
+    }
 }

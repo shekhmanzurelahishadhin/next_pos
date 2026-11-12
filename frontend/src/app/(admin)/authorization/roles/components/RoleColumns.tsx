@@ -228,5 +228,5 @@ export const useRoleColumns = ({
         );
       },
     },
-  ], [hasPermission, onView, onEdit, onDelete, pageIndex, pageSize]);
+  ], [hasPermission, onView, onEdit, onDelete, pageIndex, pageSize, router]);
 };
