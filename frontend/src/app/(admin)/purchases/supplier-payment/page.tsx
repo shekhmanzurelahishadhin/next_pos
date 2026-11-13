@@ -13,6 +13,17 @@ import { formatMoney } from "@/lib/format";
 import { supplierPaymentService, SpSupplierRow } from "@/services/supplierPaymentService";
 import { SupplierPaymentFormModal, SupplierPaymentVoucherModal } from "../components/SupplierPaymentModals";
 
+// due above 0 in red (we owe the supplier), below 0 in green (advance paid)
+function dueClass(due: number) {
+  if (due > 0) {
+    return "text-error-500";
+  }
+  if (due < 0) {
+    return "text-success-600";
+  }
+  return "";
+}
+
 // parts_bazar suppliers/adminPaymentReceipt: suppliers list, the button opens the payment form
 export default function CreateSupplierPaymentPage() {
   const [rows, setRows] = useState<SpSupplierRow[]>([]);
@@ -82,7 +93,7 @@ export default function CreateSupplierPaymentPage() {
       header: "Due",
       meta: { filterVariant: "none", widthClass: "w-[110px]" },
       cell: ({ row }) => (
-        <span className={`block text-right font-medium ${row.original.due > 0 ? "text-error-500" : row.original.due < 0 ? "text-success-600" : ""}`}>
+        <span className={`block text-right font-medium ${dueClass(row.original.due)}`}>
           {formatMoney(row.original.due)}
         </span>
       ),

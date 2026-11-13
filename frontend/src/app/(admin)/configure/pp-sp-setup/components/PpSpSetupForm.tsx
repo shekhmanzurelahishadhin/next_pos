@@ -1,5 +1,5 @@
 "use client";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, FieldPath, useForm } from "react-hook-form";
 import { useEffect } from "react";
 import Label from "@/components/form/Label";
 import Input from "@/components/form/input/InputField";
@@ -34,13 +34,14 @@ export function PpSpSetupForm({ status, setup, mode, saving, onSubmit, backendEr
     defaultValues: emptyForm,
   });
 
-  // Handle backend errors (codes come back as "codes.3")
+  // show the errors the server sent under their fields
   useEffect(() => {
-    if (backendErrors) {
-      clearErrors();
-      Object.entries(backendErrors).forEach(([field, message]) => {
-        setError(field as any, { type: 'server', message });
-      });
+    if (!backendErrors) {
+      return;
+    }
+    clearErrors();
+    for (const field in backendErrors) {
+      setError(field as FieldPath<PpSpSetupFormData>, { type: "server", message: backendErrors[field] });
     }
   }, [backendErrors, setError, clearErrors]);
 
@@ -53,6 +54,18 @@ export function PpSpSetupForm({ status, setup, mode, saving, onSubmit, backendEr
   }, [setup, reset, mode]);
 
   const codes = watch("codes");
+
+  // the same code can not stand for two digits
+  function codeUsedTwice(digit: number, value: string) {
+    const allCodes = getValues("codes");
+    for (let otherDigit = 0; otherDigit < allCodes.length; otherDigit++) {
+      const otherCode = allCodes[otherDigit].trim();
+      if (otherDigit !== digit && otherCode !== "" && otherCode === value.trim()) {
+        return "Used twice";
+      }
+    }
+    return true;
+  }
 
   return (
     <form id="pp-sp-setup-form" onSubmit={handleSubmit(onSubmit)}>
@@ -111,10 +124,7 @@ export function PpSpSetupForm({ status, setup, mode, saving, onSubmit, backendEr
                   register={register(`codes.${digit}` as const, {
                     required: "Required",
                     maxLength: { value: 10, message: "Max 10 characters" },
-                    // the same code cannot stand for two digits
-                    validate: (value) =>
-                      getValues("codes").filter((c, i) => i !== digit && c.trim() !== "" && c.trim() === value.trim()).length === 0
-                      || "Used twice",
+                    validate: (value) => codeUsedTwice(digit, value),
                   })}
                   error={errors.codes?.[digit]?.message}
                   disabled={saving}

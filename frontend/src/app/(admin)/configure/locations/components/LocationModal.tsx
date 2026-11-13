@@ -32,21 +32,26 @@ export function LocationModal({
   backendErrors,
   formatDate,
 }: LocationModalProps) {
-  const getTitle = () => {
-    switch (mode) {
-      case 'view': return 'Location Details';
-      case 'edit': return 'Edit Location';
-      case 'create': return 'Add New Location';
-      default: return 'Location';
-    }
-  };
+  let title = "Add New Location";
+  if (mode === "view") {
+    title = "Location Details";
+  } else if (mode === "edit") {
+    title = "Edit Location";
+  }
+
+  let submitText = "Create";
+  if (saving) {
+    submitText = "Saving...";
+  } else if (mode === "edit") {
+    submitText = "Update";
+  }
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       className="max-w-md"
-      title={getTitle()}
+      title={title}
       footer={
       <>
         {mode === 'view' ? (
@@ -59,7 +64,7 @@ export function LocationModal({
               Cancel
             </Button>
             <Button type="submit" form="location-form" size="sm" disabled={saving}>
-              {saving ? 'Saving...' : (mode === 'edit' ? 'Update' : 'Create')}
+              {submitText}
             </Button>
           </>
         )}

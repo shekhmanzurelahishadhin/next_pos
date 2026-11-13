@@ -9,8 +9,9 @@ use App\Http\Requests\sales\customer\UpdateCustomerRequest;
 use App\Http\Resources\sales\CustomerResource;
 use App\Models\sales\Customer;
 use App\Services\sales\CustomerService;
-use Illuminate\Http\Request;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class CustomerController extends Controller
 {
@@ -25,21 +26,19 @@ class CustomerController extends Controller
     public function index(Request $request, CustomerService $customerService)
     {
         try {
-            $perPage   = $request->get('per_page');
-            $filters   = $request->only('search','status','name','code','company_name','address','opening_balance','opening_balance_type','phone','email','created_at','created_by');
+            $filters = $request->only('status', 'name', 'code', 'address', 'opening_balance', 'opening_balance_type', 'phone', 'email', 'created_at', 'created_by');
+            $customers = $customerService->getCustomers($filters, $request->get('per_page'));
 
-            $customers = $customerService->getCustomers($filters, $perPage);
-
-            if ($customers instanceof \Illuminate\Pagination\LengthAwarePaginator) {
-                // Paginated response
+            if ($customers instanceof LengthAwarePaginator) {
+                // one page of customers
                 $data = [
                     'data'         => CustomerResource::collection($customers->items()),
                     'total'        => $customers->total(),
                     'current_page' => $customers->currentPage(),
                     'per_page'     => $customers->perPage(),
                 ];
-            }else{
-                // Collection response (no pagination)
+            } else {
+                // every customer (no per_page given)
                 $data = [
                     'data'         => CustomerResource::collection($customers),
                     'total'        => $customers->count(),
@@ -49,8 +48,8 @@ class CustomerController extends Controller
             }
 
             return ApiResponse::success($data, 'Customer retrieved successfully');
-
-        }catch (\Exception $e) {
+        } catch (\Exception $e) {
+            report($e);
             return ApiResponse::serverError('Failed to retrieve customers');
         }
     }
@@ -58,112 +57,72 @@ class CustomerController extends Controller
     public function store(CreateCustomerRequest $request, CustomerService $customerService)
     {
         try {
-            $validatedData = $request->validated();
-            $customer      = $customerService->createCustomer($validatedData);
-
-            return ApiResponse::success(
-                new CustomerResource($customer),
-                'Customer created successfully',
-                201
-            );
-
+            $customer = $customerService->createCustomer($request->validated());
+            return ApiResponse::success(new CustomerResource($customer), 'Customer created successfully', 201);
         } catch (\Exception $e) {
+            report($e);
             return ApiResponse::serverError('Failed to create customer');
         }
     }
 
-    /**
-     * Display the specified resource.
-     */
     public function show(string $id)
     {
         try {
-            $customer  = Customer::withTrashed()->findOrFail($id);
-
-            return ApiResponse::success(
-                new CustomerResource($customer),
-                'Customer retrieve successfully',
-                201
-            );
-
+            $customer = Customer::withTrashed()->findOrFail($id);
+            return ApiResponse::success(new CustomerResource($customer), 'Customer retrieve successfully', 201);
         } catch (\Exception $e) {
             return ApiResponse::serverError('Failed to retrieve customer');
         }
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(UpdateCustomerRequest $request, CustomerService $customerService, Customer $customer)
     {
         try {
-            $customer  = $customerService->updateCustomer($customer , $request->validated());
-
-            return ApiResponse::success(
-                new CustomerResource($customer),
-                'Customer updated successfully'
-            );
-
+            $customer = $customerService->updateCustomer($customer, $request->validated());
+            return ApiResponse::success(new CustomerResource($customer), 'Customer updated successfully');
         } catch (\Exception $e) {
+            report($e);
             return ApiResponse::serverError('Failed to update customer');
         }
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
-
-    // Soft delete (move to trash)
-    public function trash(Customer $customer , CustomerService $customerService)
+    // move to trash (soft delete)
+    public function trash(Customer $customer, CustomerService $customerService)
     {
         try {
             $customerService->softDeleteCustomer($customer);
-
-            return ApiResponse::success(
-                null,
-                'Customer moved to trash successfully'
-            );
-
+            return ApiResponse::success(null, 'Customer moved to trash successfully');
         } catch (\Exception $e) {
+            report($e);
             return ApiResponse::serverError('Failed to move customer to trash');
         }
     }
 
-    // Restore soft-deleted store
+    // take back from trash
     public function restore($id, CustomerService $customerService)
     {
         try {
-
-            $customer  = Customer::withTrashed()->findOrFail($id);
-
-            $customer  = $customerService->restoreCustomer($customer);
-
-            return ApiResponse::success(
-                new CustomerResource($customer),
-                'Customer restored successfully'
-            );
-
+            $customer = Customer::withTrashed()->findOrFail($id);
+            $customer = $customerService->restoreCustomer($customer);
+            return ApiResponse::success(new CustomerResource($customer), 'Customer restored successfully');
         } catch (ModelNotFoundException $e) {
             return ApiResponse::notFound('Customer not found');
         } catch (\Exception $e) {
+            report($e);
             return ApiResponse::serverError('Failed to restore customer');
         }
     }
 
-    // Force delete permanently
+    // delete for ever (only a customer in the trash)
     public function destroy($id, CustomerService $customerService)
     {
-        $customer  = Customer::withTrashed()->findOrFail($id);
+        $customer = Customer::withTrashed()->findOrFail($id);
         $deleted = $customerService->forceDeleteCustomer($customer);
 
-        if ($deleted) {
-            return response()->json([
-                'message' => 'Customer permanently deleted',
-            ]);
+        if (!$deleted) {
+            return response()->json(['message' => 'Customer is not in trash'], 400);
         }
 
-        return response()->json([
-            'message' => 'Customer is not in trash',
-        ], 400);
+        return response()->json(['message' => 'Customer permanently deleted']);
     }
 }

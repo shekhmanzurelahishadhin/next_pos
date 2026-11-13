@@ -7,7 +7,7 @@ import TextArea from "@/components/form/input/TextArea";
 import Select from "@/components/form/Select";
 import ReactSelect from "@/components/form/ReactSelect";
 import { Product, ProductFormData } from "@/services/productService";
-import { ProductOptions } from "../hooks/useProducts";
+import { Option, ProductOptions } from "../hooks/useProducts";
 
 interface ProductFormProps {
   status: { value: number; label: string }[];
@@ -65,13 +65,14 @@ export function ProductForm({ status, product, options, loadingOptions, mode, sa
     defaultValues: emptyForm,
   });
 
-  // Handle backend errors
+  // show the errors the server sent under their fields
   useEffect(() => {
-    if (backendErrors) {
-      clearErrors();
-      Object.entries(backendErrors).forEach(([field, message]) => {
-        setError(field as keyof ProductFormData, { type: 'server', message });
-      });
+    if (!backendErrors) {
+      return;
+    }
+    clearErrors();
+    for (const field in backendErrors) {
+      setError(field as keyof ProductFormData, { type: "server", message: backendErrors[field] });
     }
   }, [backendErrors, setError, clearErrors]);
 
@@ -110,7 +111,12 @@ export function ProductForm({ status, product, options, loadingOptions, mode, sa
 
   // Show only sub-categories of the selected category
   const categoryId = watch("product_category_id");
-  const subCategoryOptions = options.subCategories.filter((s) => s.category_id === categoryId);
+  const subCategoryOptions: Option[] = [];
+  for (const subCategory of options.subCategories) {
+    if (subCategory.category_id === categoryId) {
+      subCategoryOptions.push(subCategory);
+    }
+  }
 
   // Small helper for the optional dropdowns (no validation rules)
   const selectField = (name: keyof ProductFormData, label: string, list: { value: number; label: string }[], placeholder: string) => (

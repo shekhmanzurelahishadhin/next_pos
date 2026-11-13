@@ -9,6 +9,7 @@ use App\Http\Resources\softConfig\brand\BrandResource;
 use App\Models\softConfig\Brand;
 use App\Services\softConfig\BrandService;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use App\Helpers\ApiResponse;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
@@ -31,8 +32,8 @@ class BrandController extends Controller
 
             $brands = $brandService->getBrands($filters, $perPage, $columns);
 
-            if ($brands instanceof \Illuminate\Pagination\LengthAwarePaginator) {
-                $items = collect($brands->items())->map(fn($brand) => new BrandResource((object) $brand, $columns));
+            if ($brands instanceof LengthAwarePaginator) {
+                $items = $this->resources($brands->items(), $columns);
                 // Paginated response
                 $data = [
                     'data'         => $items,
@@ -41,7 +42,7 @@ class BrandController extends Controller
                     'per_page'     => $brands->perPage(),
                 ];
             }else{
-                $items = collect($brands)->map(fn($brand) => new BrandResource((object) $brand, $columns));
+                $items = $this->resources($brands, $columns);
                 // Collection response (no pagination)
                 $data = [
                     'data'         => $items,
@@ -169,5 +170,15 @@ class BrandController extends Controller
         return response()->json([
             'message' => 'Brand is not in trash',
         ], 400);
+    }
+
+    // each row as a resource with only the asked columns
+    private function resources($rows, $columns)
+    {
+        $items = [];
+        foreach ($rows as $row) {
+            $items[] = new BrandResource((object) $row, $columns);
+        }
+        return $items;
     }
 }

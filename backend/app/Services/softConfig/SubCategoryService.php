@@ -1,14 +1,12 @@
 <?php
 
-
 namespace App\Services\softConfig;
 
-
 use App\Models\softConfig\SubCategory;
-use Illuminate\Support\Facades\Auth;
 
 class SubCategoryService
 {
+    // Sub category list with the search filters; paginated when perPage is given
     public function getSubCategories(array $filters = [], $perPage = null, $categoryId = null)
     {
         $query = SubCategory::query()->select(
@@ -25,33 +23,44 @@ class SubCategoryService
         if ($categoryId) {
             $query->where('category_id', $categoryId);
         }
-        // Handle status / trash logic
+
+        // status "trash" shows the deleted sub categories, any other status filters by it
         if (($filters['status'] ?? '') === 'trash') {
             $query->onlyTrashed();
         } elseif (isset($filters['status']) && $filters['status'] !== '') {
             $query->where('status', $filters['status']);
         }
-//        else {
-//            $query->withTrashed();
-//        }
 
-        // Apply filters
-        $query
-            ->when($filters['name'] ?? null, fn($q, $name) => $q->where('name', 'like', "%{$name}%"))
-            ->when($filters['created_by'] ?? null, fn($q, $createdBy) => $q->whereHas('createdBy', fn($sub) => $sub->where('name', 'like', "%{$createdBy}%")))
-            ->when($filters['category_name'] ?? null, fn($q, $category) => $q->whereHas('category', fn($cat) => $cat->where('name', 'like', "%{$category}%")))
-            ->when($filters['created_at'] ?? null, fn($q, $createdAt) => $q->whereDate('created_at', date('Y-m-d', strtotime($createdAt))));
+        if (!empty($filters['name'])) {
+            $query->where('name', 'like', '%' . $filters['name'] . '%');
+        }
+        if (!empty($filters['created_by'])) {
+            // search by the name of the user who made the sub category
+            $createdBy = $filters['created_by'];
+            $query->whereHas('createdBy', function ($user) use ($createdBy) {
+                $user->where('name', 'like', '%' . $createdBy . '%');
+            });
+        }
+        if (!empty($filters['category_name'])) {
+            $categoryName = $filters['category_name'];
+            $query->whereHas('category', function ($category) use ($categoryName) {
+                $category->where('name', 'like', '%' . $categoryName . '%');
+            });
+        }
+        if (!empty($filters['created_at'])) {
+            $query->whereDate('created_at', date('Y-m-d', strtotime($filters['created_at'])));
+        }
 
-        // Eager load common relations
         $query->with([
             'createdBy:id,name',
             'category:id,name',
         ])->orderByDesc('id');
 
-        // Return results
-        return $perPage ? $query->paginate($perPage) : $query->get();
+        if ($perPage) {
+            return $query->paginate($perPage);
+        }
+        return $query->get();
     }
-
 
     public function createSubCategory(array $data)
     {
@@ -60,10 +69,9 @@ class SubCategoryService
 
     public function updateSubCategory(SubCategory $subCategory, array $data)
     {
-        $subCategory->update($data); // updates the model
-        return $subCategory;         // return the model itself
+        $subCategory->update($data);
+        return $subCategory;
     }
-
 
     public function softDeleteSubCategory(SubCategory $subCategory)
     {
@@ -78,6 +86,7 @@ class SubCategoryService
         return $subCategory;
     }
 
+    // only a sub category in the trash can be deleted for ever
     public function forceDeleteSubCategory(SubCategory $subCategory)
     {
         if ($subCategory->trashed()) {

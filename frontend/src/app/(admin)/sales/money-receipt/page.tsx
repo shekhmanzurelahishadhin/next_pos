@@ -13,6 +13,17 @@ import { formatMoney } from "@/lib/format";
 import { moneyReceiptService, MrCustomerRow } from "@/services/moneyReceiptService";
 import { MoneyReceiptFormModal, MoneyReceiptVoucherModal } from "../components/MoneyReceiptModals";
 
+// a due is red, an advance (minus due) is green
+function dueClass(due: number) {
+  if (due > 0) {
+    return "text-error-500";
+  }
+  if (due < 0) {
+    return "text-success-600";
+  }
+  return "";
+}
+
 // parts_bazar customers/adminMoneyReceipt: customers list, the button opens the money receipt form
 export default function CreateMoneyReceiptPage() {
   const [rows, setRows] = useState<MrCustomerRow[]>([]);
@@ -82,7 +93,7 @@ export default function CreateMoneyReceiptPage() {
       header: "Due",
       meta: { filterVariant: "none", widthClass: "w-[110px]" },
       cell: ({ row }) => (
-        <span className={`block text-right font-medium ${row.original.due > 0 ? "text-error-500" : row.original.due < 0 ? "text-success-600" : ""}`}>
+        <span className={`block text-right font-medium ${dueClass(row.original.due)}`}>
           {formatMoney(row.original.due)}
         </span>
       ),

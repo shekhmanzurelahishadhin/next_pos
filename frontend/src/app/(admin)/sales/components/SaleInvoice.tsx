@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "react-toastify";
 import { Modal } from "@/components/ui/modal";
 import Button from "@/components/ui/button/Button";
 import { printHtml } from "@/lib/print";
@@ -34,16 +35,53 @@ export function SaleInvoice({ saleId, onClose }: SaleInvoiceProps) {
 
   useEffect(() => {
     setSale(null);
-    if (saleId) saleService.getSale(saleId).then(setSale);
+    if (saleId) {
+      saleService.getSale(saleId)
+        .then(setSale)
+        .catch(() => toast.error("Failed to load sale"));
+    }
   }, [saleId]);
 
-  const print = () => {
-    if (printArea.current) printHtml(sale?.so_no ?? "Invoice", printArea.current.innerHTML, PRINT_STYLE);
-  };
+  function print() {
+    if (!printArea.current) {
+      return;
+    }
+    const title = sale ? sale.so_no : "Invoice";
+    printHtml(title, printArea.current.innerHTML, PRINT_STYLE);
+  }
 
-  const s = sale;
-  const total = s ? Number(s.grand_total) : 0;
-  const received = s ? Number(s.received_amount) : 0;
+  let total = 0;
+  let received = 0;
+  let due = 0;
+  let contactNumber = "-";
+  let carText = "-";
+  if (sale) {
+    total = Number(sale.grand_total);
+    received = Number(sale.received_amount);
+    due = total - received;
+    if (due < 0) {
+      due = 0;
+    }
+
+    // the mobile number of the SO, or else the customer's phone
+    if (sale.mobile_no) {
+      contactNumber = sale.mobile_no;
+    } else if (sale.customer && sale.customer.phone) {
+      contactNumber = sale.customer.phone;
+    }
+
+    // car name and car no, whichever are filled
+    const carParts: string[] = [];
+    if (sale.car_name) {
+      carParts.push(sale.car_name);
+    }
+    if (sale.car_no) {
+      carParts.push(sale.car_no);
+    }
+    if (carParts.length > 0) {
+      carText = carParts.join(" / ");
+    }
+  }
 
   return (
     <Modal
@@ -54,35 +92,35 @@ export function SaleInvoice({ saleId, onClose }: SaleInvoiceProps) {
       footer={
         <>
           <Button type="button" size="sm" variant="outline" onClick={onClose}>Close</Button>
-          <Button type="button" size="sm" onClick={print} disabled={!s}>Print</Button>
+          <Button type="button" size="sm" onClick={print} disabled={!sale}>Print</Button>
         </>
       }
     >
-      {!s ? (
+      {!sale ? (
         <p className="py-8 text-center text-sm text-gray-500">Loading...</p>
       ) : (
         <div ref={printArea} className="text-[13px] text-gray-800 dark:text-gray-200">
           <div className="text-center">
-            <h2 className="text-lg font-semibold">{s.company?.name ?? "Invoice"}</h2>
-            {s.company?.address && <div className="text-xs text-gray-500">{s.company.address}</div>}
-            <h3 className="mt-1 text-sm">Invoice ({s.status_name})</h3>
+            <h2 className="text-lg font-semibold">{sale.company ? sale.company.name : "Invoice"}</h2>
+            {sale.company?.address && <div className="text-xs text-gray-500">{sale.company.address}</div>}
+            <h3 className="mt-1 text-sm">Invoice ({sale.status_name})</h3>
           </div>
 
           <div className="info my-3 flex flex-wrap justify-between gap-6">
             <table>
               <tbody>
-                <tr><td className="pr-3 text-gray-500">Customer</td><td className="font-semibold">{s.customer?.name}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Contact Number</td><td>{s.mobile_no || s.customer?.phone || "-"}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Address</td><td>{s.customer?.address || "-"}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Car</td><td>{[s.car_name, s.car_no].filter(Boolean).join(" / ") || "-"}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Customer</td><td className="font-semibold">{sale.customer?.name}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Contact Number</td><td>{contactNumber}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Address</td><td>{sale.customer?.address || "-"}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Car</td><td>{carText}</td></tr>
               </tbody>
             </table>
             <table>
               <tbody>
-                <tr><td className="pr-3 text-gray-500">Invoice No</td><td className="font-semibold">{s.so_no}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Date</td><td>{formatDate(s.order_date)}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Cash / Due</td><td>{s.cash_due_name ?? "-"}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Memo No</td><td>{s.memo_no || "-"}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Invoice No</td><td className="font-semibold">{sale.so_no}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Date</td><td>{formatDate(sale.order_date)}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Cash / Due</td><td>{sale.cash_due_name ?? "-"}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Memo No</td><td>{sale.memo_no || "-"}</td></tr>
               </tbody>
             </table>
           </div>
@@ -90,36 +128,40 @@ export function SaleInvoice({ saleId, onClose }: SaleInvoiceProps) {
           <table className="items w-full border-collapse text-xs">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-800">
-                {["Sl No", "Description of Goods", "Qty", "Unit Price", "Amount"].map((h) => (
-                  <th key={h} className={`${cell} text-left font-medium`}>{h}</th>
-                ))}
+                <th className={`${cell} text-left font-medium`}>Sl No</th>
+                <th className={`${cell} text-left font-medium`}>Description of Goods</th>
+                <th className={`${cell} text-left font-medium`}>Qty</th>
+                <th className={`${cell} text-left font-medium`}>Unit Price</th>
+                <th className={`${cell} text-left font-medium`}>Amount</th>
               </tr>
             </thead>
             <tbody>
-              {s.details.map((d: any, i: number) => (
-                <tr key={d.id}>
-                  <td className={cell}>{i + 1}</td>
-                  <td className={cell}>{d.product?.name} ({d.barcode})</td>
-                  <td className={`${cell} text-right`}>{Number(d.qty)} {d.unit ?? ""}</td>
-                  <td className={`${cell} text-right`}>{formatMoney(d.sell_price)}</td>
-                  <td className={`${cell} text-right`}>{formatMoney(d.total_amount)}</td>
+              {sale.details.map((detail: any, index: number) => (
+                <tr key={detail.id}>
+                  <td className={cell}>{index + 1}</td>
+                  <td className={cell}>{detail.product?.name} ({detail.barcode})</td>
+                  <td className={`${cell} text-right`}>{Number(detail.qty)} {detail.unit ?? ""}</td>
+                  <td className={`${cell} text-right`}>{formatMoney(detail.sell_price)}</td>
+                  <td className={`${cell} text-right`}>{formatMoney(detail.total_amount)}</td>
                 </tr>
               ))}
-              {[
-                ["Total", total],
-                ["Received", received],
-                ["Due", Math.max(0, total - received)],
-              ].map(([label, value]) => (
-                <tr key={label as string}>
-                  <td colSpan={4} className={`${cell} text-right font-semibold`}>{label} :</td>
-                  <td className={`${cell} text-right font-semibold`}>{formatMoney(value as number)}</td>
-                </tr>
-              ))}
+              <tr>
+                <td colSpan={4} className={`${cell} text-right font-semibold`}>Total :</td>
+                <td className={`${cell} text-right font-semibold`}>{formatMoney(total)}</td>
+              </tr>
+              <tr>
+                <td colSpan={4} className={`${cell} text-right font-semibold`}>Received :</td>
+                <td className={`${cell} text-right font-semibold`}>{formatMoney(received)}</td>
+              </tr>
+              <tr>
+                <td colSpan={4} className={`${cell} text-right font-semibold`}>Due :</td>
+                <td className={`${cell} text-right font-semibold`}>{formatMoney(due)}</td>
+              </tr>
             </tbody>
           </table>
 
           <div className="sign mt-14 flex justify-between text-xs">
-            <span className="w-32 border-t border-gray-400 pt-1 text-center">Prepared By: {s.created_by?.name ?? ""}</span>
+            <span className="w-32 border-t border-gray-400 pt-1 text-center">Prepared By: {sale.created_by ? sale.created_by.name : ""}</span>
             <span className="w-32 border-t border-gray-400 pt-1 text-center">Received By</span>
             <span className="w-32 border-t border-gray-400 pt-1 text-center">Authorised signature</span>
           </div>

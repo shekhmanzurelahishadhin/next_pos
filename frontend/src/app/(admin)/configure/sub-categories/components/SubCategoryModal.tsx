@@ -15,7 +15,7 @@ interface SubCategoryModalProps {
   saving: boolean;
   onClose: () => void;
   onSave: (categoryData: { name: string }) => void;
-  backendErrors?: Record<string, string>; // Add this prop
+  backendErrors?: Record<string, string>;
   formatDate: (dateString?: string) => string;
 }
 
@@ -29,28 +29,31 @@ export function SubCategoryModal({
   saving,
   onClose,
   onSave,
-  backendErrors, // Add this prop
+  backendErrors,
   formatDate,
 }: SubCategoryModalProps) {
-  const getTitle = () => {
-    switch (mode) {
-      case 'view': return 'Sub-Category Details';
-      case 'edit': return 'Edit Sub-Category';
-      case 'create': return 'Add New Sub-Category';
-      default: return 'Sub-Category';
-    }
-  };
+  let title = "Add New Sub-Category";
+  let modalSize = "max-w-md";
+  if (mode === "view") {
+    title = "Sub-Category Details";
+    modalSize = "max-w-2xl";
+  } else if (mode === "edit") {
+    title = "Edit Sub-Category";
+  }
 
-  const getModalSize = () => {
-    return mode === 'view' ? 'max-w-2xl' : 'max-w-md';
-  };
+  let submitText = "Create";
+  if (saving) {
+    submitText = "Saving...";
+  } else if (mode === "edit") {
+    submitText = "Update";
+  }
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      className={getModalSize()}
-      title={getTitle()}
+      className={modalSize}
+      title={title}
       footer={
       <>
         {mode === 'view' ? (
@@ -79,7 +82,7 @@ export function SubCategoryModal({
               size="sm"
               disabled={saving}
             >
-              {saving ? 'Saving...' : (mode === 'edit' ? 'Update' : 'Create')}
+              {submitText}
             </Button>
           </>
         )}
@@ -100,7 +103,7 @@ export function SubCategoryModal({
             mode={mode}
             saving={saving}
             onSubmit={onSave}
-            backendErrors={backendErrors} // backend errors to form
+            backendErrors={backendErrors}
           />
         )}
       </div>

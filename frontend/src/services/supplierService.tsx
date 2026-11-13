@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { removeEmpty } from "@/lib/options";
 
 export interface Supplier {
     id: number;
@@ -44,31 +45,11 @@ export interface SupplierFilters {
 class SupplierService {
     async getSuppliers(filters: SupplierFilters = {}): Promise<PaginatedResponse<Supplier>> {
         // only the filled filters go to the API
-        const params = new URLSearchParams();
-
-        // Common filter fields
-        if (filters.page) params.append('page', filters.page.toString());
-        if (filters.per_page) params.append('per_page', filters.per_page.toString());
-
-        // Specific filter fields
-        if (filters.name) params.append('name', filters.name);
-        if (filters.slug) params.append('slug', filters.slug);
-        if (filters.code) params.append('code', filters.code);
-        if (filters.email) params.append('email', filters.email);
-        if (filters.phone) params.append('phone', filters.phone);
-        if (filters.address) params.append('address', filters.address);
-        if (filters.status) params.append('status', filters.status);
-        if (filters.opening_balance_type) params.append('opening_balance_type', filters.opening_balance_type.toString());
-        if (filters.opening_balance) params.append('opening_balance', filters.opening_balance.toString());
-        if (filters.created_at) params.append('created_at', filters.created_at);
-        if (filters.updated_at) params.append('updated_at', filters.updated_at);
-
-        const response = await api.get(`/purchase/suppliers?${params}`);
+        const response = await api.get('/purchase/suppliers', { params: removeEmpty({ ...filters }) });
         return response.data.data;
     }
 
     async createSupplier(supplierData: { name: string, code: string, email: string, phone: string, address: string, opening_balance_type: number, opening_balance: number }): Promise<Supplier> {
-
         const response = await api.post('/purchase/suppliers', supplierData);
         return response.data.data;
     }

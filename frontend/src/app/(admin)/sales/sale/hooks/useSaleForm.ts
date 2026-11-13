@@ -3,13 +3,12 @@
 // fill order and customer, pick a barcode, "Add" it to the grid, then "Create SO".
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
-import { api } from "@/lib/api";
 import { useAlert } from "@/hooks/useAlert";
-import { BarcodeHit, CustomerHit, Option, saleService, SaleFormOptions, SaleItem } from "@/services/saleService";
+import { apiErrorMessage, inputNumber, loadOptions, Option, today } from "@/lib/options";
+import { BarcodeHit, CustomerHit, saleService, SaleFormOptions, SaleItem, SalePayload } from "@/services/saleService";
 
-const today = () => new Date().toISOString().slice(0, 10);
-const CASH = "1";
-const DUE = "2";
+const CASH = "1"; // cash_due lookup code for "Cash"
+const DUE = "2"; // cash_due lookup code for "Due"
 
 export interface SaleHeader {
   order_date: string;
@@ -36,38 +35,40 @@ export interface EntryRow {
   sell_price: string;
 }
 
-const emptyHeader = (company_id = ""): SaleHeader => ({
-  order_date: today(),
-  cash_due: "",
-  memo_no: "",
-  due_limit_exceed_accept: "1",
-  company_id,
-  customer_id: null,
-  customer_text: "",
-  customer_due: null,
-  mobile_no: "",
-  car_name: "",
-  car_no: "",
-  due_limit: null,
-  received_type: CASH, // parts_bazar keeps it fixed on Cash
-  received_amount: "",
-});
+function emptyHeader(companyId: string): SaleHeader {
+  return {
+    order_date: today(),
+    cash_due: "",
+    memo_no: "",
+    due_limit_exceed_accept: "1",
+    company_id: companyId,
+    customer_id: null,
+    customer_text: "",
+    customer_due: null,
+    mobile_no: "",
+    car_name: "",
+    car_no: "",
+    due_limit: null,
+    received_type: CASH, // parts_bazar keeps it fixed on Cash
+    received_amount: "",
+  };
+}
 
-const emptyEntry = (): EntryRow => ({ barcode_text: "", item: null, qty: "", sell_price: "" });
+function emptyEntry(): EntryRow {
+  return { barcode_text: "", item: null, qty: "", sell_price: "" };
+}
 
-const num = (value: string | number | null | undefined) => {
-  const n = parseFloat(String(value ?? ""));
-  return isNaN(n) || n < 0 ? 0 : n;
-};
-
-export const lineAmount = (item: { qty: number; sell_price: number }) => +(item.qty * item.sell_price).toFixed(2);
+// qty x price of one grid row, rounded to 2 decimals
+export function lineAmount(item: { qty: number; sell_price: number }) {
+  return Number((item.qty * item.sell_price).toFixed(2));
+}
 
 export const useSaleForm = (editId: number | null) => {
   const { confirm } = useAlert();
   const [options, setOptions] = useState<SaleFormOptions | null>(null);
   const [companies, setCompanies] = useState<Option[]>([]);
-  const [header, setHeader] = useState<SaleHeader>(emptyHeader);
-  const [entry, setEntry] = useState<EntryRow>(emptyEntry);
+  const [header, setHeader] = useState<SaleHeader>(emptyHeader(""));
+  const [entry, setEntry] = useState<EntryRow>(emptyEntry());
   const [items, setItems] = useState<SaleItem[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -75,221 +76,359 @@ export const useSaleForm = (editId: number | null) => {
   const barcodeRef = useRef<HTMLInputElement>(null);
   const qtyRef = useRef<HTMLInputElement>(null);
 
-  const grandTotal = +items.reduce((sum, item) => sum + lineAmount(item), 0).toFixed(2);
+  // grand total of the grid
+  let grandTotal = 0;
+  for (const item of items) {
+    grandTotal += lineAmount(item);
+  }
+  grandTotal = Number(grandTotal.toFixed(2));
 
+  // dropdown lists of the form
   useEffect(() => {
-    saleService.getFormOptions().then(setOptions).catch(() => toast.error("Failed to load sales form"));
-    api.get("/configure/companies", { params: { status: 1, per_page: null } })
-      .then((res) => {
-        const list = res.data.data.data.map((c: any) => ({ value: String(c.id), label: c.name }));
+    saleService.getFormOptions()
+      .then(setOptions)
+      .catch(() => toast.error("Failed to load sales form"));
+
+    loadOptions("/configure/companies")
+      .then((list) => {
         setCompanies(list);
         // one company: pick it, like parts_bazar does for a user of one company
-        if (list.length === 1 && !editId) setHeader((h) => ({ ...h, company_id: list[0].value }));
+        if (list.length === 1 && !editId) {
+          setHeader((old) => ({ ...old, company_id: list[0].value }));
+        }
       })
       .catch(() => toast.error("Failed to load companies"));
   }, [editId]);
 
   // Edit: fill the form from a saved (pending) SO
   useEffect(() => {
-    if (!editId) return;
-    saleService.getSale(editId).then((s) => {
-      setHeader({
-        order_date: String(s.order_date).slice(0, 10),
-        cash_due: String(s.cash_due ?? ""),
-        memo_no: s.memo_no ?? "",
-        due_limit_exceed_accept: String(s.due_limit_exceed_accept ?? "1"),
-        company_id: String(s.company_id),
-        customer_id: s.customer_id,
-        customer_text: s.customer?.name ?? "",
-        customer_due: s.customer_due,
-        mobile_no: s.mobile_no ?? "",
-        car_name: s.car_name ?? "",
-        car_no: s.car_no ?? "",
-        due_limit: Number(s.customer?.credit_limit ?? 0),
-        received_type: String(s.received_type ?? CASH),
-        received_amount: Number(s.received_amount) > 0 ? String(Number(s.received_amount)) : "",
-      });
-      setItems(s.details.map((d: any) => ({
-        barcode: d.barcode,
-        product_id: d.product_id,
-        product_name: d.product?.name ?? "",
-        part_number: d.product?.part_number ?? "",
-        unit: d.unit,
-        store_id: d.store_id,
-        store_name: d.store?.name ?? "",
-        location_id: d.location_id,
-        location_name: d.location?.name ?? "",
-        purchase_price: Number(d.purchase_price),
-        stock: Number(d.qty), // refreshed below with the real stock
-        qty: Number(d.qty),
-        sell_price: Number(d.sell_price),
-      })));
-      // stock left for each barcode, not counting this SO itself
-      s.details.forEach((d: any) => {
-        saleService.searchBarcodes(d.barcode, s.company_id, editId).then((hits) => {
-          const hit = hits.find((h) => h.barcode === d.barcode);
-          if (hit) setItems((list) => list.map((i) => (i.barcode === d.barcode ? { ...i, stock: hit.stock } : i)));
-        });
-      });
-    }).catch(() => toast.error("Failed to load sale"));
+    if (!editId) {
+      return;
+    }
+    fillFromSale(editId).catch(() => toast.error("Failed to load sale"));
   }, [editId]);
 
-  const setHeaderField = (field: keyof SaleHeader, value: any) => setHeader((h) => ({ ...h, [field]: value }));
-  const setEntryField = (field: keyof EntryRow, value: any) => setEntry((e) => ({ ...e, [field]: value }));
+  async function fillFromSale(saleId: number) {
+    const sale = await saleService.getSale(saleId);
 
-  // Due sale has no money received
-  const changeCashDue = (value: string) => {
-    setHeader((h) => ({ ...h, cash_due: value, received_amount: "" }));
-  };
+    let receivedAmount = "";
+    if (Number(sale.received_amount) > 0) {
+      receivedAmount = String(Number(sale.received_amount));
+    }
 
-  const selectCustomer = (customer: CustomerHit) => {
-    setHeader((h) => ({
-      ...h,
+    setHeader({
+      order_date: String(sale.order_date).slice(0, 10),
+      cash_due: String(sale.cash_due ?? ""),
+      memo_no: sale.memo_no ?? "",
+      due_limit_exceed_accept: String(sale.due_limit_exceed_accept ?? "1"),
+      company_id: String(sale.company_id),
+      customer_id: sale.customer_id,
+      customer_text: sale.customer ? sale.customer.name : "",
+      customer_due: sale.customer_due,
+      mobile_no: sale.mobile_no ?? "",
+      car_name: sale.car_name ?? "",
+      car_no: sale.car_no ?? "",
+      due_limit: Number(sale.customer ? sale.customer.credit_limit : 0),
+      received_type: String(sale.received_type ?? CASH),
+      received_amount: receivedAmount,
+    });
+
+    const savedItems: SaleItem[] = [];
+    for (const detail of sale.details) {
+      // the stock left for the barcode, not counting this SO itself
+      let stock = Number(detail.qty);
+      const hits = await saleService.searchBarcodes(detail.barcode, sale.company_id, saleId);
+      for (const hit of hits) {
+        if (hit.barcode === detail.barcode) {
+          stock = hit.stock;
+        }
+      }
+
+      savedItems.push({
+        barcode: detail.barcode,
+        product_id: detail.product_id,
+        product_name: detail.product ? detail.product.name : "",
+        part_number: detail.product ? detail.product.part_number : "",
+        unit: detail.unit,
+        store_id: detail.store_id,
+        store_name: detail.store ? detail.store.name : "",
+        location_id: detail.location_id,
+        location_name: detail.location ? detail.location.name : "",
+        purchase_price: Number(detail.purchase_price),
+        stock: stock,
+        qty: Number(detail.qty),
+        sell_price: Number(detail.sell_price),
+      });
+    }
+    setItems(savedItems);
+  }
+
+  function setHeaderField(field: keyof SaleHeader, value: string | number | null) {
+    setHeader((old) => ({ ...old, [field]: value }));
+  }
+
+  function setEntryField(field: keyof EntryRow, value: string) {
+    setEntry((old) => ({ ...old, [field]: value }));
+  }
+
+  // the date picker needs a function that does not change on every render
+  const changeDate = useCallback((_dates: Date[], dateStr: string) => {
+    setHeader((old) => ({ ...old, order_date: dateStr }));
+  }, []);
+
+  // A due sale has no money received
+  function changeCashDue(value: string) {
+    setHeader((old) => ({ ...old, cash_due: value, received_amount: "" }));
+  }
+
+  // Typing a new customer name drops the customer picked before
+  function changeCustomerText(text: string) {
+    setHeader((old) => ({ ...old, customer_text: text, customer_id: null }));
+  }
+
+  function selectCustomer(customer: CustomerHit) {
+    let customerText = customer.name;
+    if (customer.phone) {
+      customerText = `${customer.name}(${customer.phone})`;
+    }
+
+    setHeader((old) => ({
+      ...old,
       customer_id: customer.id,
-      customer_text: `${customer.name}${customer.phone ? `(${customer.phone})` : ""}`,
+      customer_text: customerText,
       customer_due: customer.due,
       mobile_no: customer.phone ?? "",
-      car_name: customer.car_name ?? h.car_name,
+      car_name: customer.car_name ?? old.car_name,
       due_limit: customer.due_limit,
     }));
-  };
+  }
 
-  const canSearchCustomer = () => {
+  // the customer search needs a company
+  function canSearchCustomer() {
     if (!header.company_id) {
       toast.warn("Please Select Company");
       return false;
     }
     return true;
-  };
+  }
 
-  const canSearchBarcode = () => {
+  // the barcode search needs a company
+  function canSearchBarcode() {
     if (!header.company_id) {
       toast.warn("Please Select Company First!");
       return false;
     }
     return true;
-  };
+  }
+
+  // Typing a new barcode drops the barcode picked before
+  function changeBarcodeText(text: string) {
+    setEntry((old) => ({ ...old, barcode_text: text, item: null }));
+  }
 
   // Barcode picked: store, location, product, stock and purchase price come from it
-  const selectBarcode = (item: BarcodeHit) => {
-    setEntry((e) => ({ ...e, item, barcode_text: item.barcode, qty: "" }));
-    setTimeout(() => qtyRef.current?.focus(), 0);
-  };
+  function selectBarcode(item: BarcodeHit) {
+    setEntry((old) => ({ ...old, item: item, barcode_text: item.barcode, qty: "" }));
+    setTimeout(() => {
+      if (qtyRef.current) {
+        qtyRef.current.focus();
+      }
+    }, 0);
+  }
 
-  const changeEntryQty = (value: string) => {
-    if (entry.item && num(value) > entry.item.stock) {
+  // the qty of the "Add" row can not pass the stock
+  function changeEntryQty(value: string) {
+    if (entry.item && inputNumber(value) > entry.item.stock) {
       toast.error("Quantity can not be grater than available stock");
       setEntryField("qty", "");
       return;
     }
     setEntryField("qty", value);
-  };
+  }
 
-  // "Add" button: same checks and order as parts_bazar AddNew()
-  const addItem = () => {
-    const fail = (message: string) => {
+  function resetEntry() {
+    setEntry(emptyEntry());
+  }
+
+  // message of the first problem of the "Add" row, "" when all is fine (same order as parts_bazar AddNew())
+  function addItemError(): string {
+    if (!header.order_date) return "Please Select Order Date!";
+    if (!header.cash_due) return "Please Select Cash / Due!";
+    if (!header.customer_id) return "Please Select Customer!";
+    if (!entry.item) return "Please Enter Code!";
+    if (!header.company_id) return "Please Select Company!";
+    if (entry.qty === "" || inputNumber(entry.qty) <= 0) return "Please Insert Qty!";
+    if (entry.sell_price === "") return "Please Insert Sell Price";
+    if (entry.item.stock <= 0) return "Stock is not available";
+
+    // one barcode only once in the grid
+    for (const item of items) {
+      if (item.barcode === entry.item.barcode) {
+        return "This barcode is already added in the grid!.";
+      }
+    }
+    return "";
+  }
+
+  // "Add" button: put the typed row in the grid
+  function addItem() {
+    const message = addItemError();
+    if (message) {
       toast.error(message);
       return false;
+    }
+
+    const newItem: SaleItem = {
+      ...(entry.item as BarcodeHit),
+      qty: inputNumber(entry.qty),
+      sell_price: inputNumber(entry.sell_price),
     };
-    if (!header.order_date) return fail("Please Select Order Date!");
-    if (!header.cash_due) return fail("Please Select Cash / Due!");
-    if (!header.customer_id) return fail("Please Select Customer!");
-    if (!entry.item) return fail("Please Enter Code!");
-    if (!header.company_id) return fail("Please Select Company!");
-    if (entry.qty === "" || num(entry.qty) <= 0) return fail("Please Insert Qty!");
-    if (entry.sell_price === "") return fail("Please Insert Sell Price");
-    if (entry.item.stock <= 0) return fail("Stock is not available");
-    if (items.some((item) => item.barcode === entry.item!.barcode)) return fail("This barcode is already added in the grid!.");
-
-    setItems((list) => [...list, { ...entry.item!, qty: num(entry.qty), sell_price: num(entry.sell_price) }]);
+    setItems([...items, newItem]);
     setError("");
+
+    // go back to the barcode box for the next item
     setEntry(emptyEntry());
-    setTimeout(() => barcodeRef.current?.focus(), 0);
-    return true;
-  };
-
-  // qty / price typed in the grid; qty can not pass the stock
-  const changeItem = (index: number, field: "qty" | "sell_price", value: string) => {
-    setItems((list) => list.map((item, i) => {
-      if (i !== index) return item;
-      if (field === "qty" && (num(value) > item.stock || num(value) <= 0)) {
-        if (num(value) > item.stock) toast.error("Quantity is less than stock");
-        return { ...item, qty: 1 };
+    setTimeout(() => {
+      if (barcodeRef.current) {
+        barcodeRef.current.focus();
       }
-      return { ...item, [field]: num(value) };
-    }));
-  };
+    }, 0);
+    return true;
+  }
 
-  const removeItem = (index: number) => setItems((list) => list.filter((_, i) => i !== index));
+  // qty / price typed in the grid; a qty above the stock (or 0) goes back to 1
+  function changeItem(index: number, field: "qty" | "sell_price", value: string) {
+    const newItems: SaleItem[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (i !== index) {
+        newItems.push(item);
+        continue;
+      }
 
-  const resetForm = () => {
-    setHeader(emptyHeader(companies.length === 1 ? companies[0].value : ""));
+      const number = inputNumber(value);
+      if (field === "qty" && (number > item.stock || number <= 0)) {
+        if (number > item.stock) {
+          toast.error("Quantity is less than stock");
+        }
+        newItems.push({ ...item, qty: 1 });
+      } else {
+        newItems.push({ ...item, [field]: number });
+      }
+    }
+    setItems(newItems);
+  }
+
+  function removeItem(index: number) {
+    const newItems: SaleItem[] = [];
+    for (let i = 0; i < items.length; i++) {
+      if (i !== index) {
+        newItems.push(items[i]);
+      }
+    }
+    setItems(newItems);
+  }
+
+  function resetForm() {
+    // one company stays picked
+    let companyId = "";
+    if (companies.length === 1) {
+      companyId = companies[0].value;
+    }
+    setHeader(emptyHeader(companyId));
     setEntry(emptyEntry());
     setItems([]);
     setError("");
-  };
+  }
 
   // "Cancel" button of parts_bazar: clear everything after asking
-  const cancelForm = async () => {
+  async function cancelForm() {
     const result = await confirm({ title: "Cancel?", text: "Are you sure to cancel?" });
-    if (result.isConfirmed) resetForm();
-  };
+    if (result.isConfirmed) {
+      resetForm();
+    }
+  }
 
-  // "Create SO": same checks as parts_bazar beforeSend
-  const saveSale = async () => {
-    if (!header.order_date) return toast.error("Please Select Order Date!");
-    if (!header.cash_due) return toast.error("Please Select Cash / Due!");
-    if (!header.customer_id) return toast.error("Please Select Customer!");
+  // "Create SO" / "Update SO": same checks as parts_bazar beforeSend
+  async function saveSale() {
+    if (!header.order_date) {
+      toast.error("Please Select Order Date!");
+      return;
+    }
+    if (!header.cash_due) {
+      toast.error("Please Select Cash / Due!");
+      return;
+    }
+    if (!header.customer_id) {
+      toast.error("Please Select Customer!");
+      return;
+    }
     if (header.cash_due === CASH) {
-      if (!header.received_type) return toast.error("Please select a received type!");
-      if (!(num(header.received_amount) > 0)) return toast.error("Please add received amount!");
+      if (!header.received_type) {
+        toast.error("Please select a received type!");
+        return;
+      }
+      if (inputNumber(header.received_amount) <= 0) {
+        toast.error("Please add received amount!");
+        return;
+      }
     }
     if (header.cash_due === DUE && header.due_limit_exceed_accept === "2" && (header.due_limit ?? 0) < grandTotal) {
-      return setError("Sorry! Due Limit Exceed!");
+      setError("Sorry! Due Limit Exceed!");
+      return;
     }
-    if (items.length === 0) return toast.error("Please add at least one Item!");
+    if (items.length === 0) {
+      toast.error("Please add at least one Item!");
+      return;
+    }
 
-    const payload = {
+    // only the fields the API needs from each grid row
+    const payloadItems: SalePayload["items"] = [];
+    for (const item of items) {
+      payloadItems.push({ barcode: item.barcode, qty: item.qty, sell_price: item.sell_price });
+    }
+
+    // a cash sale sends the money received, a due sale does not
+    const isCash = header.cash_due === CASH;
+    const payload: SalePayload = {
       company_id: Number(header.company_id),
       order_date: header.order_date,
       cash_due: header.cash_due,
       memo_no: header.memo_no || undefined,
-      customer_id: header.customer_id,
+      customer_id: Number(header.customer_id),
       mobile_no: header.mobile_no || undefined,
       car_name: header.car_name || undefined,
       car_no: header.car_no || undefined,
       due_limit_exceed_accept: header.due_limit_exceed_accept,
-      received_type: header.cash_due === CASH ? header.received_type : undefined,
-      received_amount: header.cash_due === CASH ? num(header.received_amount) : null,
-      items: items.map(({ barcode, qty, sell_price }) => ({ barcode, qty, sell_price })),
+      received_type: isCash ? header.received_type : undefined,
+      received_amount: isCash ? inputNumber(header.received_amount) : null,
+      items: payloadItems,
     };
 
+    setSaving(true);
+    setError("");
     try {
-      setSaving(true);
-      setError("");
-      const saved = editId ? await saleService.updateSale(editId, payload) : await saleService.createSale(payload);
-      toast.success(editId ? "Sale updated successfully." : "Data saved successfully.");
-      if (!editId) resetForm();
+      let saved;
+      if (editId) {
+        saved = await saleService.updateSale(editId, payload);
+        toast.success("Sale updated successfully.");
+      } else {
+        saved = await saleService.createSale(payload);
+        toast.success("Data saved successfully.");
+        resetForm();
+      }
       setSavedId(saved.id);
-    } catch (err: any) {
-      const errors = err?.response?.data?.errors;
-      const firstError = errors && Object.values(errors)[0];
-      setError(
-        (Array.isArray(firstError) ? firstError[0] : null) ||
-        err?.response?.data?.message ||
-        "Data not saved. Pleae solve the above errors."
-      );
+    } catch (err) {
+      setError(apiErrorMessage(err, "Data not saved. Pleae solve the above errors."));
     } finally {
       setSaving(false);
     }
-  };
-
-  const changeDate = useCallback((_dates: Date[], dateStr: string) => setHeader((h) => ({ ...h, order_date: dateStr })), []);
+  }
 
   return {
     options, companies, header, entry, items, error, saving, savedId, grandTotal, barcodeRef, qtyRef,
-    setHeaderField, setEntryField, setSavedId, setEntry, changeCashDue, changeDate, selectCustomer, canSearchCustomer,
-    canSearchBarcode, selectBarcode, changeEntryQty, addItem, changeItem, removeItem, cancelForm, saveSale,
-    resetEntry: () => setEntry(emptyEntry()),
+    setHeaderField, setEntryField, setSavedId, changeCashDue, changeDate, changeCustomerText, selectCustomer,
+    canSearchCustomer, canSearchBarcode, changeBarcodeText, selectBarcode, changeEntryQty, resetEntry,
+    addItem, changeItem, removeItem, cancelForm, saveSale,
   };
 };

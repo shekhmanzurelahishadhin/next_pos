@@ -36,16 +36,14 @@ export function BrandForm({ status, brand, mode, saving, onSubmit, backendErrors
     }
   });
 
-  // Handle backend errors
+  // show the errors the server sent under their fields
   useEffect(() => {
-    if (backendErrors) {
-      clearErrors();
-      Object.entries(backendErrors).forEach(([field, message]) => {
-        setError(field as keyof BrandFormData, {
-          type: 'server',
-          message: Array.isArray(message) ? message[0] : message
-        });
-      });
+    if (!backendErrors) {
+      return;
+    }
+    clearErrors();
+    for (const field in backendErrors) {
+      setError(field as keyof BrandFormData, { type: "server", message: backendErrors[field] });
     }
   }, [backendErrors, setError, clearErrors]);
 

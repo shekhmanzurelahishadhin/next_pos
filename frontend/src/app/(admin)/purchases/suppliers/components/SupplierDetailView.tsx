@@ -9,19 +9,25 @@ interface SupplierDetailViewProps {
   formatDate: (dateString?: string) => string;
 }
 
-export function SupplierDetailView({ supplier, formatDate }: SupplierDetailViewProps) {
+// opening balance type 1 = debit, 2 = credit
+function balanceTypeName(type: number) {
+  if (type == 1) {
+    return "Debit";
+  }
+  if (type == 2) {
+    return "Credit";
+  }
+  return "Unknown";
+}
 
+export function SupplierDetailView({ supplier, formatDate }: SupplierDetailViewProps) {
   return (
     <DetailGrid>
       <DetailRow label="Supplier Name" value={supplier.name} />
       <DetailRow label="Email" value={supplier.email ?? "-"} />
       <DetailRow label="Phone" value={supplier.phone ?? "-"} />
       <DetailRow label="Address" value={supplier.address ?? "-"} />
-      <DetailRow label="Balance Type" value={supplier.opening_balance_type == 1
-                  ? "Debit"
-                  : supplier.opening_balance_type == 2
-                    ? "Credit"
-                    : "Unknown" } />
+      <DetailRow label="Balance Type" value={balanceTypeName(supplier.opening_balance_type)} />
       <DetailRow label="Opening Balance" value={formatMoney(supplier.opening_balance)} />
       <DetailRow label="Status" value={<StatusBadge status={Number(supplier.status)} trashed={!!supplier.deleted_at} />} />
       <DetailRow label="Created At" value={formatDate(supplier.created_at)} />

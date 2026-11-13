@@ -9,6 +9,7 @@ use App\Http\Resources\softConfig\unit\UnitResource;
 use App\Models\softConfig\Unit;
 use App\Services\softConfig\UnitService;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use App\Helpers\ApiResponse;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
@@ -33,8 +34,8 @@ class UnitController extends Controller
 
             $units = $unitService->getUnits($filters, $perPage, $columns);
 
-            if ($units instanceof \Illuminate\Pagination\LengthAwarePaginator) {
-                $items = collect($units->items())->map(fn($unit) => new UnitResource((object) $unit, $columns));
+            if ($units instanceof LengthAwarePaginator) {
+                $items = $this->resources($units->items(), $columns);
                 // Paginated response
                 $data =[
                     'data'         => $items,
@@ -44,7 +45,7 @@ class UnitController extends Controller
                 ];
             }else{
                 // Collection response (no pagination)
-                $items = collect($units)->map(fn($unit) => new UnitResource((object) $unit, $columns));
+                $items = $this->resources($units, $columns);
                 $data = [
                     'data'         => $items,
                     'total'        => $units->count(),
@@ -171,5 +172,15 @@ class UnitController extends Controller
         return response()->json([
             'message' => 'Unit is not in trash',
         ], 400);
+    }
+
+    // each row as a resource with only the asked columns
+    private function resources($rows, $columns)
+    {
+        $items = [];
+        foreach ($rows as $row) {
+            $items[] = new UnitResource((object) $row, $columns);
+        }
+        return $items;
     }
 }

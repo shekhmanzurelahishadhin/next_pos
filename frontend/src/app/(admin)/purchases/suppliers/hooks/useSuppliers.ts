@@ -1,102 +1,84 @@
-// hooks/useSuppliers.ts
-import { formatDate } from '@/lib/format';
-import { apiErrorMessage } from '@/lib/options';
-import { useState, useCallback, useEffect } from 'react';
-import { toast } from 'react-toastify';
-import { supplierService, Supplier, SupplierFilters, PaginatedResponse } from '@/services/supplierService';
-import { lookupService } from '@/services/lookupService';
-import { useAlert } from '@/hooks/useAlert';
-import { useModal } from '@/hooks/useModal';
-import { useDebounce } from '@/hooks/useDebounce';
+// Supplier Setup: the supplier list, its filters, the modal and the dropdowns of the form
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "react-toastify";
+import { useAlert } from "@/hooks/useAlert";
+import { useModal } from "@/hooks/useModal";
+import { useDebounce } from "@/hooks/useDebounce";
+import { formatDate } from "@/lib/format";
+import { apiErrorMessage, apiFieldErrors } from "@/lib/options";
+import { supplierService, Supplier } from "@/services/supplierService";
+import { lookupService } from "@/services/lookupService";
+
+type IdOption = { value: number; label: string };
+
 export const useSuppliers = () => {
   const { confirm } = useAlert();
   const { isOpen, openModal, closeModal } = useModal();
 
-  // Data state
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState<{ value: number; label: string }[]>([]);
-  const [openingBalanceType, setOpeningBalanceType] = useState<{ value: number; label: string }[]>([]);
 
-  // Modal state
+  // dropdown lists of the supplier form
+  const [status, setStatus] = useState<IdOption[]>([]);
+  const [openingBalanceType, setOpeningBalanceType] = useState<IdOption[]>([]);
+
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
-  const [mode, setMode] = useState<'view' | 'edit' | 'create'>('create');
+  const [mode, setMode] = useState<"view" | "edit" | "create">("create");
   const [backendErrors, setBackendErrors] = useState<Record<string, string>>({});
 
-  // Filter and pagination state
   const [filters, setFilters] = useState<Record<string, string | number>>({});
   const debouncedFilters = useDebounce(filters, 300);
-  const [pagination, setPagination] = useState({
-    pageIndex: 0,
-    pageSize: 10,
-  });
-  const [total, setTotal] = useState(0);
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
-
-  // Load suppliers
   const loadSuppliers = useCallback(async () => {
     try {
       setLoading(true);
-      const apiFilters: SupplierFilters = {
-        page: pagination.pageIndex + 1,
-        per_page: pagination.pageSize,
-        ...debouncedFilters,
-      };
-
-      const response: PaginatedResponse<Supplier> = await supplierService.getSuppliers(apiFilters);
+      const response = await supplierService.getSuppliers({ ...debouncedFilters, page: pagination.pageIndex + 1, per_page: pagination.pageSize });
       setSuppliers(response.data);
       setTotal(response.total);
-    } catch (err) {
-      toast.error('Failed to load suppliers');
-      console.error('Error loading suppliers:', err);
+    } catch {
+      toast.error("Failed to load suppliers");
     } finally {
       setLoading(false);
     }
   }, [pagination.pageIndex, pagination.pageSize, debouncedFilters]);
 
-  
-  // dropdown lists of the supplier form
-  const fetchLookups = useCallback(async () => {
-    try {
-      const statusList = await lookupService.getLookupByType("active_status");
-      const balanceTypeList = await lookupService.getLookupByType("transaction_type");
-      setStatus(statusList);
-      setOpeningBalanceType(balanceTypeList);
-    } catch (err) {
-      console.error("Failed to fetch lookups", err);
-      toast.error("Failed to load lookup data");
-    }
-  }, []);
-
   useEffect(() => {
     loadSuppliers();
   }, [loadSuppliers]);
 
-  // for active status lookup
+  // the dropdown lists are loaded once
   useEffect(() => {
-    fetchLookups();
+    async function loadLookups() {
+      try {
+        setStatus(await lookupService.getLookupByType("active_status"));
+        setOpeningBalanceType(await lookupService.getLookupByType("transaction_type"));
+      } catch {
+        toast.error("Failed to load lookup data");
+      }
+    }
+    loadLookups();
   }, []);
 
-
-  // Modal operations
   const handleView = useCallback((supplier: Supplier) => {
     setSelectedSupplier(supplier);
-    setMode('view');
+    setMode("view");
     setBackendErrors({});
     openModal();
   }, [openModal]);
 
   const handleEdit = useCallback((supplier: Supplier) => {
     setSelectedSupplier(supplier);
-    setMode('edit');
+    setMode("edit");
     setBackendErrors({});
     openModal();
   }, [openModal]);
 
   const handleCreate = useCallback(() => {
     setSelectedSupplier(null);
-    setMode('create');
+    setMode("create");
     setBackendErrors({});
     openModal();
   }, [openModal]);
@@ -104,114 +86,94 @@ export const useSuppliers = () => {
   const handleCloseModal = useCallback(() => {
     closeModal();
     setSelectedSupplier(null);
-    setMode('create');
+    setMode("create");
     setBackendErrors({});
   }, [closeModal]);
 
-  // CRUD operations
+  // move to trash
   const handleSoftDelete = useCallback(async (id: number) => {
     const result = await confirm({
-      title: 'Move to Trash?',
-      text: 'Are you sure you want to move this supplier to trash? This action cannot be undone.',
+      title: "Move to Trash?",
+      text: "Are you sure you want to move this supplier to trash? This action cannot be undone.",
     });
+    if (!result.isConfirmed) {
+      return;
+    }
 
-    if (!result.isConfirmed) return;
-    let previousSuppliers: Supplier[] = [];
     try {
-      // Optimistic update
-      previousSuppliers = [...suppliers];
-      setSuppliers(prev => prev.filter(supplier => supplier.id !== id));
-
       await supplierService.softDeleteSupplier(id);
-      toast.success('Supplier moved to trashed!');
+      toast.success("Supplier moved to trashed!");
       await loadSuppliers();
     } catch {
-      // Revert on error
-      setSuppliers(previousSuppliers);
-      toast.error('Failed to delete supplier');
+      toast.error("Failed to delete supplier");
     }
-  }, [confirm, suppliers, loadSuppliers]);
+  }, [confirm, loadSuppliers]);
 
+  // delete for ever (only a supplier in the trash)
   const handleForceDelete = useCallback(async (id: number) => {
     const result = await confirm({
-      title: 'Delete Supplier?',
-      text: 'Are you sure you want to delete this supplier? This action cannot be undone.',
+      title: "Delete Supplier?",
+      text: "Are you sure you want to delete this supplier? This action cannot be undone.",
     });
+    if (!result.isConfirmed) {
+      return;
+    }
 
-    if (!result.isConfirmed) return;
-
-    let previousSuppliers: Supplier[] = [];
     try {
-      // Optimistic update
-      previousSuppliers = [...suppliers];
-      setSuppliers(prev => prev.filter(supplier => supplier.id !== id));
-
       await supplierService.forceDeleteSupplier(id);
-      toast.success('Supplier deleted successfully!');
+      toast.success("Supplier deleted successfully!");
       await loadSuppliers();
     } catch {
-      // Revert on error
-      setSuppliers(previousSuppliers);
-      toast.error('Failed to delete supplier');
+      toast.error("Failed to delete supplier");
     }
-  }, [confirm, suppliers, loadSuppliers]);
+  }, [confirm, loadSuppliers]);
 
+  // take back from trash
   const handleRestore = useCallback(async (id: number) => {
     try {
       await supplierService.restoreSupplier(id);
-      toast.success('Supplier restored successfully!');
+      toast.success("Supplier restored successfully!");
       await loadSuppliers();
     } catch {
-      // Revert on error
-      toast.error('Failed to restore supplier');
+      toast.error("Failed to restore supplier");
     }
-  }, [suppliers, loadSuppliers]);
+  }, [loadSuppliers]);
 
-  const handleSave = useCallback(async (supplierData: { 
-    name: string, 
-    code: string, 
-    phone: string, 
-    address: string, 
-    opening_balance_type: number, 
-    opening_balance: number, 
+  const handleSave = useCallback(async (supplierData: {
+    name: string,
+    code: string,
+    phone: string,
+    address: string,
+    opening_balance_type: number,
+    opening_balance: number,
     timezone: string,
-    email: string, 
-    status: string 
+    email: string,
+    status: string
   }) => {
     try {
       setSaving(true);
       setBackendErrors({});
 
-      if (mode === 'edit' && selectedSupplier) {
+      if (mode === "edit" && selectedSupplier) {
         await supplierService.updateSupplier(selectedSupplier.id, supplierData);
-        toast.success('Supplier updated successfully!');
+        toast.success("Supplier updated successfully!");
       } else {
         await supplierService.createSupplier(supplierData);
-        toast.success('Supplier created successfully!');
-        setPagination(prev => ({ ...prev, pageIndex: 0 }));
+        toast.success("Supplier created successfully!");
+        // a new supplier is on the first page
+        setPagination((oldPagination) => ({ ...oldPagination, pageIndex: 0 }));
       }
 
       handleCloseModal();
       await loadSuppliers();
       return true;
     } catch (err) {
-      // validation errors are shown under their fields, any other error as a message
-      const error = err as { response?: { data?: { errors?: Record<string, string[] | string> } } };
-      const fieldErrors = error.response && error.response.data ? error.response.data.errors : undefined;
-
-      if (fieldErrors) {
-        const errors: Record<string, string> = {};
-        for (const field in fieldErrors) {
-          const messages = fieldErrors[field];
-          if (Array.isArray(messages)) {
-            errors[field] = messages[0];
-          } else {
-            errors[field] = messages;
-          }
-        }
-        setBackendErrors(errors);
+      // validation errors are shown under the fields, any other error as a message
+      const fieldErrors = apiFieldErrors(err);
+      if (Object.keys(fieldErrors).length > 0) {
+        setBackendErrors(fieldErrors);
       } else {
-        toast.error(apiErrorMessage(err, 'Failed to save supplier'));
+        toast.error(apiErrorMessage(err, "Failed to save supplier"));
       }
       return false;
     } finally {
@@ -219,36 +181,18 @@ export const useSuppliers = () => {
     }
   }, [mode, selectedSupplier, loadSuppliers, handleCloseModal]);
 
-  // Filter and search operations
   const handleFilterChange = useCallback((name: string, value: string | number) => {
-    setFilters((prev) => ({ ...prev, [name]: value }));
-    setPagination(prev => ({ ...prev, pageIndex: 0 }));
+    setFilters((oldFilters) => ({ ...oldFilters, [name]: value }));
+    setPagination((oldPagination) => ({ ...oldPagination, pageIndex: 0 }));
   }, []);
 
-
-  // Utility functions
-  const clearBackendErrors = useCallback(() => {
-    setBackendErrors({});
-  }, []);
-
-  const resetToFirstPage = useCallback(() => {
-    setPagination(prev => ({ ...prev, pageIndex: 0 }));
-  }, []);
-
-  // Function to export all suppliers
-  const exportAllSuppliers = async () => {
-    try {
-      // Call API without pagination to get all data
-      const response = await supplierService.getSuppliers({});
-      return response.data;
-    } catch (error) {
-      console.error('Error exporting all suppliers:', error);
-      throw error;
-    }
-  };
+  // all suppliers for the export, without paging
+  async function exportAllSuppliers() {
+    const response = await supplierService.getSuppliers({});
+    return response.data;
+  }
 
   return {
-    // State
     suppliers,
     loading,
     saving,
@@ -261,7 +205,6 @@ export const useSuppliers = () => {
     status,
     openingBalanceType,
 
-    // Actions
     setPagination,
     handleView,
     handleEdit,
@@ -272,9 +215,6 @@ export const useSuppliers = () => {
     handleRestore,
     handleSave,
     handleFilterChange,
-    clearBackendErrors,
-    resetToFirstPage,
-    loadSuppliers,
     exportAllSuppliers,
     formatDate,
   };

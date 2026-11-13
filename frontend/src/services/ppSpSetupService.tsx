@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { pickFilters } from "@/lib/options";
 
 export const PP_SP_TYPES = [
   { value: 1, label: "Purchase Price" },
@@ -43,14 +44,9 @@ export const convertPrice = (amount: string, codes: string[]) =>
 
 class PpSpSetupService {
   async getSetups(filters: PpSpSetupFilters = {}): Promise<PaginatedResponse<PpSpSetup>> {
-    const params = new URLSearchParams();
-
-    if (filters.page) params.append('page', filters.page.toString());
-    if (filters.per_page) params.append('per_page', filters.per_page.toString());
-    if (filters.type) params.append('type', filters.type);
-    if (filters.status) params.append('status', filters.status);
-
-    const response = await api.get(`/configure/pp-sp-setups?${params}`);
+    // only these filters go to the API, and only when they have a value
+    const params = pickFilters(filters, ['page', 'per_page', 'type', 'status']);
+    const response = await api.get('/configure/pp-sp-setups', { params: params });
     return response.data.data;
   }
 

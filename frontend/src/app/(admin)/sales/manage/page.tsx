@@ -12,8 +12,8 @@ import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import ComponentCard from "@/components/common/ComponentCard";
 import { DataTable } from "@/components/tables/DataTable";
 import ActionButtons from "@/components/ui/button/ActionButton";
-import { api } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/format";
+import { apiErrorMessage, loadOptions, Option } from "@/lib/options";
 import { saleService, SaleRow, SALE_STATUS } from "@/services/saleService";
 import { SaleInvoice } from "../components/SaleInvoice";
 
@@ -27,6 +27,21 @@ const STATUS_OPTIONS = [
   { value: String(SALE_STATUS.APPROVED), label: "Approved" },
 ];
 
+const STATUS_COLORS: Record<number, string> = {
+  [SALE_STATUS.PENDING]: "bg-warning-50 text-warning-600 dark:bg-warning-500/15 dark:text-orange-400",
+  [SALE_STATUS.APPROVED]: "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-500",
+};
+
+// "Cash" / "Due" of a cash_due code
+function salesTypeName(cashDue: string) {
+  for (const type of SALES_TYPE) {
+    if (type.value === String(cashDue)) {
+      return type.label;
+    }
+  }
+  return "N/A";
+}
+
 // parts_bazar "Manage Sales Orders": one row per sold barcode, SO columns merged
 export default function SalesManage() {
   const router = useRouter();
@@ -36,7 +51,7 @@ export default function SalesManage() {
   const [rows, setRows] = useState<SaleRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [stores, setStores] = useState<{ value: string; label: string }[]>([]);
+  const [stores, setStores] = useState<Option[]>([]);
   const [filters, setFilters] = useState<Record<string, string | number>>({});
   const debouncedFilters = useDebounce(filters, 300);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 });
@@ -61,8 +76,9 @@ export default function SalesManage() {
 
   useEffect(() => {
     document.title = "Sales Manage | Multibrand POS";
-    api.get("/configure/stores", { params: { status: 1 } })
-      .then((res) => setStores(res.data.data.data.map((s: any) => ({ value: String(s.id), label: s.name }))))
+    // the store list is only for the filter, the page still works without it
+    loadOptions("/configure/stores")
+      .then(setStores)
       .catch(() => {});
   }, []);
 
@@ -71,22 +87,30 @@ export default function SalesManage() {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   }, []);
 
-  // Ask, run, show the message from the server, reload
-  const act = useCallback(async (title: string, text: string, action: () => Promise<void>, done: string) => {
+  // Ask first, then run the action, show the message and reload the list
+  const act = useCallback(async (title: string, text: string, action: () => Promise<void>, doneMessage: string) => {
     const result = await confirm({ title, text });
-    if (!result.isConfirmed) return;
+    if (!result.isConfirmed) {
+      return;
+    }
     try {
       await action();
-      toast.success(done);
+      toast.success(doneMessage);
       load();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Something went wrong");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Something went wrong"));
     }
   }, [confirm, load]);
 
   const columns = useMemo((): ColumnDef<SaleRow>[] => {
-    const bySo = (row: SaleRow) => row.sale_id;
-    const money = (value: string | number) => <span className="block text-right">{formatMoney(value)}</span>;
+    // the SO columns are merged over the item rows of one SO
+    function bySo(row: SaleRow) {
+      return row.sale_id;
+    }
+
+    function money(value: string | number) {
+      return <span className="block text-right">{formatMoney(value)}</span>;
+    }
 
     return [
       {
@@ -94,7 +118,7 @@ export default function SalesManage() {
         accessorKey: "cash_due",
         header: "Sales Type",
         meta: { filterVariant: "select", filterOptions: SALES_TYPE, mergeBy: bySo, widthClass: "w-[80px]" },
-        cell: ({ row }) => SALES_TYPE.find((t) => t.value === String(row.original.cash_due))?.label ?? "N/A",
+        cell: ({ row }) => salesTypeName(row.original.cash_due),
       },
       {
         id: "so_no",
@@ -189,13 +213,16 @@ export default function SalesManage() {
         header: "",
         meta: { filterVariant: "none", widthClass: "w-[36px]" },
         cell: ({ row }) => {
-          const r = row.original;
-          if (r.status !== SALE_STATUS.PENDING || !hasPermission("sale.delete")) return null;
+          // one item can be taken out of a pending SO
+          const item = row.original;
+          if (item.status !== SALE_STATUS.PENDING || !hasPermission("sale.delete")) {
+            return null;
+          }
           return (
             <button
               type="button"
               title="Delete this item"
-              onClick={() => act("Delete Item?", `Remove ${r.part_number} (${r.barcode}) from ${r.so_no}?`, () => saleService.deleteSaleItem(r.id), "Item deleted")}
+              onClick={() => act("Delete Item?", `Remove ${item.part_number} (${item.barcode}) from ${item.so_no}?`, () => saleService.deleteSaleItem(item.id), "Item deleted")}
               className="rounded p-1 text-gray-400 hover:bg-error-50 hover:text-error-500 dark:hover:bg-error-500/10"
             >
               <FiX size={14} />
@@ -221,9 +248,7 @@ export default function SalesManage() {
         header: "Status",
         meta: { filterVariant: "select", filterOptions: STATUS_OPTIONS, mergeBy: bySo, widthClass: "w-[90px]" },
         cell: ({ row }) => (
-          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${row.original.status === SALE_STATUS.APPROVED
-            ? "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-500"
-            : "bg-warning-50 text-warning-600 dark:bg-warning-500/15 dark:text-orange-400"}`}>
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[row.original.status] ?? ""}`}>
             {row.original.status_name}
           </span>
         ),
@@ -233,28 +258,28 @@ export default function SalesManage() {
         header: "Actions",
         meta: { filterVariant: "none", mergeBy: bySo, widthClass: "w-[110px]" },
         cell: ({ row }) => {
-          const r = row.original;
-          const pending = r.status === SALE_STATUS.PENDING;
+          const sale = row.original;
+          const pending = sale.status === SALE_STATUS.PENDING;
           return (
             <ActionButtons
-              row={r}
+              row={sale}
               buttons={[
-                { icon: FiEye, variant: "success", size: "sm", tooltip: "View / Print Invoice", onClick: () => setInvoiceId(r.sale_id) },
+                { icon: FiEye, variant: "success", size: "sm", tooltip: "View / Print Invoice", onClick: () => setInvoiceId(sale.sale_id) },
                 {
                   icon: FiCheckCircle, variant: "success", size: "sm", tooltip: "Approve (stock out)",
-                  show: () => pending && r.can_approve && hasPermission("sale.approve"),
-                  onClick: () => act("Approve Sale?", `Are you want to approve ${r.so_no}? Stock goes out and the SO is locked.`,
-                    () => saleService.approveSale(r.sale_id), `${r.so_no} approved`),
+                  show: () => pending && sale.can_approve && hasPermission("sale.approve"),
+                  onClick: () => act("Approve Sale?", `Are you want to approve ${sale.so_no}? Stock goes out and the SO is locked.`,
+                    () => saleService.approveSale(sale.sale_id), `${sale.so_no} approved`),
                 },
                 {
                   icon: FiEdit, variant: "primary", size: "sm", tooltip: "Edit",
                   show: () => pending && hasPermission("sale.edit"),
-                  onClick: () => router.push(`/sales/sale?id=${r.sale_id}`),
+                  onClick: () => router.push(`/sales/sale?id=${sale.sale_id}`),
                 },
                 {
                   icon: FiTrash, variant: "danger", size: "sm", tooltip: "Delete SO",
                   show: () => pending && hasPermission("sale.delete"),
-                  onClick: () => act("Delete SO?", `Are you sure to delete ${r.so_no}?`, () => saleService.deleteSale(r.sale_id), "Deleted Successfully!"),
+                  onClick: () => act("Delete SO?", `Are you sure to delete ${sale.so_no}?`, () => saleService.deleteSale(sale.sale_id), "Deleted Successfully!"),
                 },
               ]}
             />

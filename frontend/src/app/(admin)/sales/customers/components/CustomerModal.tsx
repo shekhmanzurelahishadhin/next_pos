@@ -31,28 +31,22 @@ export function CustomerModal({
   saving,
   onClose,
   onSave,
-  backendErrors, // Add this prop
+  backendErrors,
   formatDate,
 }: CustomerModalProps) {
-  const getTitle = () => {
-    switch (mode) {
-      case 'view': return 'Customer Details';
-      case 'edit': return 'Edit Customer';
-      case 'create': return 'Add New Customer';
-      default: return 'Customer';
-    }
-  };
-
-  const getModalSize = () => {
-    return 'max-w-2xl';
-  };
+  let title = "Add New Customer";
+  if (mode === "view") {
+    title = "Customer Details";
+  } else if (mode === "edit") {
+    title = "Edit Customer";
+  }
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      className={getModalSize()}
-      title={getTitle()}
+      className="max-w-2xl"
+      title={title}
       footer={
       <>
         {mode === 'view' ? (

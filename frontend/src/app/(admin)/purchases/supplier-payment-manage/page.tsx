@@ -71,7 +71,19 @@ export default function ManageSupplierPaymentPage() {
   }, [confirm, load]);
 
   const columns = useMemo((): ColumnDef<SpRow>[] => {
-    const money = (value: string | number) => <span className="block text-right">{formatMoney(value)}</span>;
+    function money(value: string | number) {
+      return <span className="block text-right">{formatMoney(value)}</span>;
+    }
+
+    // "ob, PO-1, advance" shown as "Opening, PO-1, Advance"
+    function poNames(poNos: string) {
+      const names: string[] = [];
+      for (const poNo of poNos.split(", ")) {
+        names.push(poLabel(poNo));
+      }
+      return names.join(", ");
+    }
+
     return [
       {
         id: "payment_date",
@@ -99,7 +111,7 @@ export default function ManageSupplierPaymentPage() {
         accessorKey: "po_nos",
         header: "PO No",
         meta: { filterVariant: "text", widthClass: "min-w-[120px]" },
-        cell: ({ row }) => row.original.po_nos.split(", ").map(poLabel).join(", "),
+        cell: ({ row }) => poNames(row.original.po_nos),
       },
       {
         id: "payment_type",

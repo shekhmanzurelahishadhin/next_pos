@@ -13,6 +13,7 @@ import ComponentCard from "@/components/common/ComponentCard";
 import { DataTable } from "@/components/tables/DataTable";
 import ActionButtons from "@/components/ui/button/ActionButton";
 import { formatDate, formatMoney } from "@/lib/format";
+import { apiErrorMessage } from "@/lib/options";
 import { PAYMENT_TYPES, paymentTypeName } from "@/lib/payment";
 import { moneyReceiptService, MrRow } from "@/services/moneyReceiptService";
 import { MoneyReceiptVoucherModal, orderLabel } from "../components/MoneyReceiptModals";
@@ -59,18 +60,32 @@ export default function ManageMoneyReceiptPage() {
 
   const remove = useCallback(async (row: MrRow) => {
     const result = await confirm({ title: "Delete Money Receipt?", text: `Delete ${row.mr_no}? The customer due goes back up by ${formatMoney(row.total_amount)}.` });
-    if (!result.isConfirmed) return;
+    if (!result.isConfirmed) {
+      return;
+    }
     try {
       await moneyReceiptService.deleteReceipt(row.mr_no);
       toast.success(`${row.mr_no} deleted`);
       load();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Failed to delete money receipt");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Failed to delete money receipt"));
     }
   }, [confirm, load]);
 
   const columns = useMemo((): ColumnDef<MrRow>[] => {
-    const money = (value: string | number) => <span className="block text-right">{formatMoney(value)}</span>;
+    function money(value: string | number) {
+      return <span className="block text-right">{formatMoney(value)}</span>;
+    }
+
+    // "ob, SO-1, advance" shown as "Opening, SO-1, Advance"
+    function orderNames(orderNos: string) {
+      const names: string[] = [];
+      for (const orderNo of orderNos.split(", ")) {
+        names.push(orderLabel(orderNo));
+      }
+      return names.join(", ");
+    }
+
     return [
       {
         id: "receipt_date",
@@ -98,7 +113,7 @@ export default function ManageMoneyReceiptPage() {
         accessorKey: "order_nos",
         header: "SO No",
         meta: { filterVariant: "text", widthClass: "min-w-[120px]" },
-        cell: ({ row }) => row.original.order_nos.split(", ").map(orderLabel).join(", "),
+        cell: ({ row }) => orderNames(row.original.order_nos),
       },
       {
         id: "received_type",

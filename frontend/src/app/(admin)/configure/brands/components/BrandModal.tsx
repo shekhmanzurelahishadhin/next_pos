@@ -13,7 +13,7 @@ interface BrandModalProps {
   saving: boolean;
   onClose: () => void;
   onSave: (brandData: { name: string }) => void;
-  backendErrors?: Record<string, string>; // Add this prop
+  backendErrors?: Record<string, string>;
   formatDate: (dateString?: string) => string;
 }
 
@@ -25,28 +25,31 @@ export function BrandModal({
   saving,
   onClose,
   onSave,
-  backendErrors, // Add this prop
+  backendErrors,
   formatDate,
 }: BrandModalProps) {
-  const getTitle = () => {
-    switch (mode) {
-      case 'view': return 'Brand Details';
-      case 'edit': return 'Edit Brand';
-      case 'create': return 'Add New Brand';
-      default: return 'Brand';
-    }
-  };
+  let title = "Add New Brand";
+  let modalSize = "max-w-md";
+  if (mode === "view") {
+    title = "Brand Details";
+    modalSize = "max-w-2xl";
+  } else if (mode === "edit") {
+    title = "Edit Brand";
+  }
 
-  const getModalSize = () => {
-    return mode === 'view' ? 'max-w-2xl' : 'max-w-md';
-  };
+  let submitText = "Create";
+  if (saving) {
+    submitText = "Saving...";
+  } else if (mode === "edit") {
+    submitText = "Update";
+  }
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      className={getModalSize()}
-      title={getTitle()}
+      className={modalSize}
+      title={title}
       footer={
       <>
         {mode === 'view' ? (
@@ -75,7 +78,7 @@ export function BrandModal({
               size="sm"
               disabled={saving}
             >
-              {saving ? 'Saving...' : (mode === 'edit' ? 'Update' : 'Create')}
+              {submitText}
             </Button>
           </>
         )}
@@ -94,7 +97,7 @@ export function BrandModal({
             mode={mode}
             saving={saving}
             onSubmit={onSave}
-            backendErrors={backendErrors} // backend errors to form
+            backendErrors={backendErrors}
           />
         )}
       </div>

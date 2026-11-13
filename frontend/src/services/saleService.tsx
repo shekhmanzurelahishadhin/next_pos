@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { removeEmpty } from "@/lib/options";
 
 export type Option = { value: string; label: string };
 
@@ -103,8 +104,7 @@ class SaleService {
   }
 
   async getSales(filters: Record<string, string | number> = {}) {
-    const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "" && v !== undefined && v !== null));
-    const res = await api.get(BASE, { params });
+    const res = await api.get(BASE, { params: removeEmpty(filters) });
     return res.data.data as { data: SaleRow[]; total: number };
   }
 

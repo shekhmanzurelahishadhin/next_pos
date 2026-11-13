@@ -6,11 +6,13 @@ use App\Models\softConfig\PpSpSetup;
 
 class PpSpSetupService
 {
+    // PP/SP setup list with the search filters; paginated when perPage is given
     public function getSetups(array $filters = [], $perPage = null)
     {
         $query = PpSpSetup::query();
 
-        // Handle status / trash logic
+        // status "trash" shows only the deleted setups, a status filters by it,
+        // no status shows all (deleted ones too)
         if (($filters['status'] ?? '') === 'trash') {
             $query->onlyTrashed();
         } elseif (isset($filters['status']) && $filters['status'] !== '') {
@@ -19,14 +21,26 @@ class PpSpSetupService
             $query->withTrashed();
         }
 
-        $query
-            ->when($filters['type'] ?? null, fn($q, $type) => $q->where('type', $type))
-            ->when($filters['created_by'] ?? null, fn($q, $createdBy) => $q->whereHas('createdBy', fn($sub) => $sub->where('name', 'like', "%{$createdBy}%")))
-            ->when($filters['created_at'] ?? null, fn($q, $createdAt) => $q->whereDate('created_at', date('Y-m-d', strtotime($createdAt))));
+        if (!empty($filters['type'])) {
+            $query->where('type', $filters['type']);
+        }
+        if (!empty($filters['created_by'])) {
+            // search by the name of the user who made the setup
+            $createdBy = $filters['created_by'];
+            $query->whereHas('createdBy', function ($user) use ($createdBy) {
+                $user->where('name', 'like', '%' . $createdBy . '%');
+            });
+        }
+        if (!empty($filters['created_at'])) {
+            $query->whereDate('created_at', date('Y-m-d', strtotime($filters['created_at'])));
+        }
 
         $query->with('createdBy:id,name')->orderByDesc('id');
 
-        return $perPage ? $query->paginate($perPage) : $query->get();
+        if ($perPage) {
+            return $query->paginate($perPage);
+        }
+        return $query->get();
     }
 
     public function createSetup(array $data)

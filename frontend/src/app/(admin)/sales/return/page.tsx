@@ -9,8 +9,8 @@ import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import ComponentCard from "@/components/common/ComponentCard";
 import { DataTable } from "@/components/tables/DataTable";
 import ActionButtons from "@/components/ui/button/ActionButton";
-import { api } from "@/lib/api";
 import { formatDate } from "@/lib/format";
+import { loadOptions, Option } from "@/lib/options";
 import { saleReturnService, SaleReturnableRow } from "@/services/saleReturnService";
 import { SaleReturnChalanModal, SaleReturnFormModal } from "../components/SaleReturnModals";
 
@@ -19,7 +19,7 @@ export default function SalesReturnPage() {
   const [rows, setRows] = useState<SaleReturnableRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [stores, setStores] = useState<{ value: string; label: string }[]>([]);
+  const [stores, setStores] = useState<Option[]>([]);
   const [filters, setFilters] = useState<Record<string, string | number>>({});
   const debouncedFilters = useDebounce(filters, 300);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 });
@@ -45,8 +45,9 @@ export default function SalesReturnPage() {
 
   useEffect(() => {
     document.title = "Sales Return | Multibrand POS";
-    api.get("/configure/stores", { params: { status: 1 } })
-      .then((res) => setStores(res.data.data.data.map((s: any) => ({ value: String(s.id), label: s.name }))))
+    // the store list is only for the filter, the page still works without it
+    loadOptions("/configure/stores")
+      .then(setStores)
       .catch(() => {});
   }, []);
 
@@ -56,7 +57,11 @@ export default function SalesReturnPage() {
   }, []);
 
   const columns = useMemo((): ColumnDef<SaleReturnableRow>[] => {
-    const bySo = (row: SaleReturnableRow) => row.sale_id;
+    // the SO columns are merged over the item rows of one SO
+    function bySo(row: SaleReturnableRow) {
+      return row.sale_id;
+    }
+
     return [
       {
         id: "so_no",

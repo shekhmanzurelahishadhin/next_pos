@@ -15,7 +15,7 @@ interface StoreModalProps {
   saving: boolean;
   onClose: () => void;
   onSave: (storeData: { name: string, company_id?: number | null, address?: string, status?: number }) => void;
-  backendErrors?: Record<string, string>; // Add this prop
+  backendErrors?: Record<string, string>;
   formatDate: (dateString?: string) => string;
 }
 
@@ -29,28 +29,31 @@ export function StoreModal({
   saving,
   onClose,
   onSave,
-  backendErrors, // Add this prop
+  backendErrors,
   formatDate,
 }: StoreModalProps) {
-  const getTitle = () => {
-    switch (mode) {
-      case 'view': return 'Store Details';
-      case 'edit': return 'Edit Store';
-      case 'create': return 'Add New Store';
-      default: return 'Store';
-    }
-  };
+  let title = "Add New Store";
+  let modalSize = "max-w-md";
+  if (mode === "view") {
+    title = "Store Details";
+    modalSize = "max-w-2xl";
+  } else if (mode === "edit") {
+    title = "Edit Store";
+  }
 
-  const getModalSize = () => {
-    return mode === 'view' ? 'max-w-2xl' : 'max-w-md';
-  };
+  let submitText = "Create";
+  if (saving) {
+    submitText = "Saving...";
+  } else if (mode === "edit") {
+    submitText = "Update";
+  }
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      className={getModalSize()}
-      title={getTitle()}
+      className={modalSize}
+      title={title}
       footer={
       <>
         {mode === 'view' ? (
@@ -79,7 +82,7 @@ export function StoreModal({
               size="sm"
               disabled={saving}
             >
-              {saving ? 'Saving...' : (mode === 'edit' ? 'Update' : 'Create')}
+              {submitText}
             </Button>
           </>
         )}
@@ -100,7 +103,7 @@ export function StoreModal({
             mode={mode}
             saving={saving}
             onSubmit={onSave}
-            backendErrors={backendErrors} // backend errors to form
+            backendErrors={backendErrors}
           />
         )}
       </div>

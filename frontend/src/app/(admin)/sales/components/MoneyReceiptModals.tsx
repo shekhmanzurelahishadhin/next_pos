@@ -9,22 +9,49 @@ import DatePicker from "@/components/form/date-picker";
 import ReactSelect from "@/components/form/ReactSelect";
 import { printHtml } from "@/lib/print";
 import { formatDate, formatMoney } from "@/lib/format";
+import { apiErrorMessage, blurOnWheel, Option, today } from "@/lib/options";
 import { ADJUSTMENT, BANK_TYPES, distributeLot, PAYMENT_TYPES, paymentTypeName, toNum } from "@/lib/payment";
-import { moneyReceiptService, MrForm } from "@/services/moneyReceiptService";
+import { moneyReceiptService, MrForm, MrPayload } from "@/services/moneyReceiptService";
 
 const inputClass =
   "h-9 w-full rounded-md border border-gray-300 bg-transparent px-2.5 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 disabled:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:disabled:bg-gray-800";
 const readOnlyClass =
   "flex h-9 w-full items-center rounded-md bg-gray-100 px-3 text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-300";
+const formHeadCell = "px-2 py-2 text-center font-medium";
 
-const today = () => new Date().toISOString().slice(0, 10);
+const CASH = "1";
 
 // what is typed on one invoice row
 type LineInput = { amount: string; discount: string; vds: string; tds: string };
-const EMPTY_LINE: LineInput = { amount: "", discount: "", vds: "", tds: "" };
-const lineTotal = (l: LineInput) => toNum(l.amount) + toNum(l.discount) + toNum(l.vds) + toNum(l.tds);
 
-export const orderLabel = (orderNo: string) => (orderNo === "ob" ? "Opening" : orderNo === "advance" ? "Advance" : orderNo);
+function emptyLine(): LineInput {
+  return { amount: "", discount: "", vds: "", tds: "" };
+}
+
+// one empty row for every due invoice
+function emptyLines(count: number): LineInput[] {
+  const lines: LineInput[] = [];
+  for (let i = 0; i < count; i++) {
+    lines.push(emptyLine());
+  }
+  return lines;
+}
+
+// amount + discount + VDS + TDS of one row
+function lineTotal(line: LineInput) {
+  return toNum(line.amount) + toNum(line.discount) + toNum(line.vds) + toNum(line.tds);
+}
+
+// the SO no of the opening balance and advance lines is shown as a word
+export function orderLabel(orderNo: string) {
+  if (orderNo === "ob") {
+    return "Opening";
+  }
+  if (orderNo === "advance") {
+    return "Advance";
+  }
+  return orderNo;
+}
 
 // bordered block with a title, like the Sales Form sections
 function Box({ title, children }: { title: string; children: React.ReactNode }) {
@@ -39,7 +66,10 @@ function Box({ title, children }: { title: string; children: React.ReactNode }) 
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[130px_1fr] items-center gap-3">
-      <Label className="mb-0">{label}{required && <span className="text-error-500"> *</span>}</Label>
+      <Label className="mb-0">
+        {label}
+        {required && <span className="text-error-500"> *</span>}
+      </Label>
       <div>{children}</div>
     </div>
   );
@@ -64,6 +94,7 @@ export function MoneyReceiptFormModal({ customerId, onClose, onSaved }: MoneyRec
   const [lines, setLines] = useState<LineInput[]>([]);
   const [saving, setSaving] = useState(false);
 
+  // a new customer: clear the form and load the due invoices
   useEffect(() => {
     setForm(null);
     setDate(today());
@@ -75,96 +106,201 @@ export function MoneyReceiptFormModal({ customerId, onClose, onSaved }: MoneyRec
     setLot("");
     setRemarks("");
     setLines([]);
-    if (!customerId) return;
+    if (!customerId) {
+      return;
+    }
     moneyReceiptService.getForm(customerId)
       .then((data) => {
         setForm(data);
-        setLines(data.lines.map(() => ({ ...EMPTY_LINE })));
+        setLines(emptyLines(data.lines.length));
       })
       .catch((err) => {
-        toast.error(err?.response?.data?.message || "Failed to load money receipt form");
+        toast.error(apiErrorMessage(err, "Failed to load money receipt form"));
         onClose();
       });
   }, [customerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const changeDate = useCallback((_d: Date[], dateStr: string) => setDate(dateStr), []);
-  const changeChequeDate = useCallback((_d: Date[], dateStr: string) => setChequeDate(dateStr), []);
+  // the date pickers need functions that do not change on every render
+  const changeDate = useCallback((_dates: Date[], dateStr: string) => setDate(dateStr), []);
+  const changeChequeDate = useCallback((_dates: Date[], dateStr: string) => setChequeDate(dateStr), []);
 
-  const totalDue = form?.lines.reduce((sum, l) => sum + l.due, 0) ?? 0;
-  const sum = (field: keyof LineInput) => lines.reduce((s, l) => s + toNum(l[field]), 0);
-  const received = sum("amount");
-  const isCash = receivedType === "1";
+  // totals of the due invoices and of what is typed
+  let totalBill = 0;
+  let totalPrevReceived = 0;
+  let totalDue = 0;
+  if (form) {
+    for (const line of form.lines) {
+      totalBill += line.bill_amount;
+      totalPrevReceived += line.prev_received;
+      totalDue += line.due;
+    }
+  }
+  let received = 0;
+  let discount = 0;
+  let vds = 0;
+  let tds = 0;
+  let typedTotal = 0;
+  for (const line of lines) {
+    received += toNum(line.amount);
+    discount += toNum(line.discount);
+    vds += toNum(line.vds);
+    tds += toNum(line.tds);
+    typedTotal += lineTotal(line);
+  }
+
   const isAdjustment = receivedType === ADJUSTMENT;
-  const noBank = isCash || isAdjustment;
-  // an Adjustment uses old advance, so it never makes a new one
-  const advance = isAdjustment ? 0 : Math.max(0, toNum(lot) - received);
-  const bankOptions = (form?.banks ?? []).map((name) => ({ value: name, label: name }));
+  const noBank = receivedType === CASH || isAdjustment; // cash and adjustment have no bank / cheque
+
+  // what is left of the lot is an advance; an Adjustment uses old advance, so it never makes a new one
+  let advance = 0;
+  if (!isAdjustment) {
+    advance = Math.max(0, toNum(lot) - received);
+  }
+
+  const advanceBalance = form ? form.advance_balance : 0;
+
+  const bankOptions: Option[] = [];
+  if (form) {
+    for (const name of form.banks) {
+      bankOptions.push({ value: name, label: name });
+    }
+  }
 
   // parts_bazar: picking the receive type clears the rows and puts the whole due
   // (for Adjustment the advance balance) as lot amount
-  const changeReceivedType = (value: string) => {
+  function changeReceivedType(value: string) {
     setReceivedType(value);
-    setLines((list) => list.map(() => ({ ...EMPTY_LINE })));
+    setLines(emptyLines(lines.length));
+
     if (value === ADJUSTMENT) {
-      const balance = form?.advance_balance ?? 0;
-      if (balance <= 0) toast.error("This customer has no advance to adjust");
-      setLot(balance > 0 ? String(balance) : "");
+      if (advanceBalance <= 0) {
+        toast.error("This customer has no advance to adjust");
+        setLot("");
+      } else {
+        setLot(String(advanceBalance));
+      }
+    } else if (totalDue > 0) {
+      setLot(String(totalDue));
     } else {
-      setLot(totalDue > 0 ? String(totalDue) : "");
+      setLot("");
     }
-    if (value === "1" || value === ADJUSTMENT) {
+
+    if (value === CASH || value === ADJUSTMENT) {
       setBankName("");
       setCustomerBankName("");
       setChequeNo("");
       setChequeDate("");
     }
-  };
+  }
 
-  const distribute = () => {
-    if (!receivedType) return toast.error("Select Receive Type");
-    if (!form) return;
-    const { amounts } = distributeLot(form.lines.map((l) => l.due), toNum(lot));
-    setLines(amounts.map((amount) => ({ ...EMPTY_LINE, amount: amount > 0 ? String(amount) : "" })));
-  };
+  // "Distribute": share the lot over the due invoices, oldest first
+  function distribute() {
+    if (!receivedType) {
+      toast.error("Select Receive Type");
+      return;
+    }
+    if (!form) {
+      return;
+    }
 
-  // parts_bazar: the adjustment amount can not pass the advance balance
-  const changeLot = (value: string) => {
-    if (isAdjustment && toNum(value) > (form?.advance_balance ?? 0)) {
+    const dues: number[] = [];
+    for (const line of form.lines) {
+      dues.push(line.due);
+    }
+    const result = distributeLot(dues, toNum(lot));
+
+    const newLines: LineInput[] = [];
+    for (const amount of result.amounts) {
+      const line = emptyLine();
+      if (amount > 0) {
+        line.amount = String(amount);
+      }
+      newLines.push(line);
+    }
+    setLines(newLines);
+  }
+
+  // the adjustment amount can not pass the advance balance
+  function changeLot(value: string) {
+    if (isAdjustment && toNum(value) > advanceBalance) {
       toast.error("Adjustment amount exceeded the advance amount.");
-      setLot(String(form?.advance_balance ?? 0));
+      setLot(String(advanceBalance));
       return;
     }
     setLot(value);
-  };
+  }
 
   // parts_bazar calculateAmount: a row can not take more than its due
-  const changeLine = (index: number, field: keyof LineInput, value: string) => {
-    if (!receivedType) return toast.error("Select Receive Type.");
-    const next = lines.map((l, i) => (i === index ? { ...l, [field]: value } : l));
-    if (form && lineTotal(next[index]) > form.lines[index].due) {
+  function changeLine(index: number, field: keyof LineInput, value: string) {
+    if (!receivedType) {
+      toast.error("Select Receive Type.");
+      return;
+    }
+
+    const newLines = [...lines];
+    newLines[index] = { ...newLines[index], [field]: value };
+
+    if (form && lineTotal(newLines[index]) > form.lines[index].due) {
       toast.error("Amount can not be more than the due amount");
-      next[index] = { ...EMPTY_LINE };
+      newLines[index] = emptyLine();
     }
-    const nextReceived = next.reduce((s, l) => s + toNum(l.amount), 0);
-    if (isAdjustment && nextReceived > toNum(lot)) {
+
+    let newReceived = 0;
+    for (const line of newLines) {
+      newReceived += toNum(line.amount);
+    }
+
+    if (isAdjustment && newReceived > toNum(lot)) {
+      // an adjustment can not use more than its amount
       toast.error("Adjustment amount exceeded the advance amount.");
-      next[index] = { ...EMPTY_LINE };
-    } else if (nextReceived > toNum(lot)) {
-      setLot(String(+nextReceived.toFixed(2)));
+      newLines[index] = emptyLine();
+    } else if (newReceived > toNum(lot)) {
+      // receiving more than the lot makes the lot bigger
+      setLot(String(Number(newReceived.toFixed(2))));
     }
-    setLines(next);
-  };
 
-  const save = async () => {
-    if (!form) return;
-    if (!date) return toast.error("Please select a Date");
-    if (!receivedType) return toast.error("Please select a Receive Type");
-    if (lot === "") return toast.error("Lot amount cannot be blank");
-    if (BANK_TYPES.includes(receivedType) && !bankName.trim()) return toast.error("Please select a Bank Name");
-    if (received <= 0 && advance <= 0 && !lines.some((l) => lineTotal(l) > 0)) return toast.error("Please insert amount!");
+    setLines(newLines);
+  }
 
+  async function save() {
+    if (!form) {
+      return;
+    }
+    if (!date) {
+      toast.error("Please select a Date");
+      return;
+    }
+    if (!receivedType) {
+      toast.error("Please select a Receive Type");
+      return;
+    }
+    if (lot === "") {
+      toast.error("Lot amount cannot be blank");
+      return;
+    }
+    if (BANK_TYPES.includes(receivedType) && !bankName.trim()) {
+      toast.error("Please select a Bank Name");
+      return;
+    }
+    if (received <= 0 && advance <= 0 && typedTotal <= 0) {
+      toast.error("Please insert amount!");
+      return;
+    }
+
+    const receiptLines: MrPayload["lines"] = [];
+    for (let i = 0; i < form.lines.length; i++) {
+      const typed = lines[i] || emptyLine();
+      receiptLines.push({
+        sale_id: form.lines[i].sale_id,
+        amount: toNum(typed.amount),
+        discount: toNum(typed.discount),
+        vds: toNum(typed.vds),
+        tds: toNum(typed.tds),
+      });
+    }
+
+    setSaving(true);
     try {
-      setSaving(true);
       const saved = await moneyReceiptService.createReceipt({
         customer_id: form.customer_id,
         receipt_date: date,
@@ -175,40 +311,35 @@ export function MoneyReceiptFormModal({ customerId, onClose, onSaved }: MoneyRec
         cheque_no: chequeNo || undefined,
         cheque_date: chequeDate || undefined,
         remarks: remarks || undefined,
-        lines: form.lines.map((l, i) => ({
-          sale_id: l.sale_id,
-          amount: toNum(lines[i]?.amount),
-          discount: toNum(lines[i]?.discount),
-          vds: toNum(lines[i]?.vds),
-          tds: toNum(lines[i]?.tds),
-        })),
+        lines: receiptLines,
       });
       toast.success(`Money receipt saved (${saved.mr_no})`);
       onSaved(saved.mr_no);
-    } catch (err: any) {
-      const errors = err?.response?.data?.errors;
-      const first = errors && Object.values(errors)[0];
-      toast.error((Array.isArray(first) ? first[0] : null) || err?.response?.data?.message || "Money receipt not saved");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Money receipt not saved"));
     } finally {
       setSaving(false);
     }
-  };
+  }
 
-  const numInput = (index: number, field: keyof LineInput) => (
-    <input
-      type="number"
-      min="0"
-      value={lines[index]?.[field] ?? ""}
-      readOnly={!receivedType}
-      onChange={(e) => changeLine(index, field, e.target.value)}
-      onWheel={(e) => (e.target as HTMLInputElement).blur()}
-      className={`${inputClass} text-right`}
-    />
-  );
+  function numberInput(index: number, field: keyof LineInput) {
+    const line = lines[index] || emptyLine();
+    return (
+      <input
+        type="number"
+        min="0"
+        value={line[field]}
+        readOnly={!receivedType}
+        onChange={(e) => changeLine(index, field, e.target.value)}
+        onWheel={blurOnWheel}
+        className={`${inputClass} text-right`}
+      />
+    );
+  }
 
   return (
     <Modal
-      isOpen={!!customerId}
+      isOpen={customerId !== null}
       onClose={onClose}
       className="max-w-6xl"
       title="Create Money Receipt"
@@ -219,9 +350,9 @@ export function MoneyReceiptFormModal({ customerId, onClose, onSaved }: MoneyRec
         </>
       }
     >
-      {!form ? (
-        <p className="py-8 text-center text-sm text-gray-500">Loading...</p>
-      ) : (
+      {!form && <p className="py-8 text-center text-sm text-gray-500">Loading...</p>}
+
+      {form && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Box title="Customer Information">
@@ -235,15 +366,21 @@ export function MoneyReceiptFormModal({ customerId, onClose, onSaved }: MoneyRec
             </Box>
             <Box title="Receive Information">
               <Field label="Receive Type" required>
-                <ReactSelect options={PAYMENT_TYPES} placeholder="Select" value={receivedType} isClearable={false} onChange={(v) => changeReceivedType(String(v ?? ""))} />
+                <ReactSelect
+                  options={PAYMENT_TYPES}
+                  placeholder="Select"
+                  value={receivedType}
+                  isClearable={false}
+                  onChange={(value) => changeReceivedType(value ? String(value) : "")}
+                />
               </Field>
               <Field label="Bank Name" required={BANK_TYPES.includes(receivedType)}>
                 <ReactSelect
                   options={bankOptions}
-                  placeholder={bankOptions.length ? "Select" : "No bank yet (Configure > Lookups, type bank_name)"}
+                  placeholder={bankOptions.length > 0 ? "Select" : "No bank yet (Configure > Lookups, type bank_name)"}
                   value={bankName || null}
                   isDisabled={noBank}
-                  onChange={(v) => setBankName(String(v ?? ""))}
+                  onChange={(value) => setBankName(value ? String(value) : "")}
                 />
               </Field>
               <Field label="Customer Bank Name">
@@ -253,13 +390,12 @@ export function MoneyReceiptFormModal({ customerId, onClose, onSaved }: MoneyRec
                 <input type="text" maxLength={255} value={chequeNo} disabled={noBank} onChange={(e) => setChequeNo(e.target.value)} className={inputClass} />
               </Field>
               <Field label="Cheque Date">
-                {noBank
-                  ? <div className={readOnlyClass} />
-                  : <DatePicker id="mr_cheque_date" defaultDate={chequeDate || undefined} onChange={changeChequeDate} />}
+                {noBank && <div className={readOnlyClass} />}
+                {!noBank && <DatePicker id="mr_cheque_date" defaultDate={chequeDate || undefined} onChange={changeChequeDate} />}
               </Field>
               <Field label={isAdjustment ? "Adjustment Amount" : "Lot Amount"} required>
                 <div className="flex gap-2">
-                  <input type="number" min="0" value={lot} onChange={(e) => changeLot(e.target.value)} onWheel={(e) => (e.target as HTMLInputElement).blur()} className={`${inputClass} text-right`} />
+                  <input type="number" min="0" value={lot} onChange={(e) => changeLot(e.target.value)} onWheel={blurOnWheel} className={`${inputClass} text-right`} />
                   <Button type="button" size="sm" variant="outline" onClick={distribute}>Distribute</Button>
                 </div>
               </Field>
@@ -272,32 +408,42 @@ export function MoneyReceiptFormModal({ customerId, onClose, onSaved }: MoneyRec
             <table className="w-full min-w-[1000px] text-[13px]">
               <thead>
                 <tr className="bg-gray-50 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                  {["SL", "SO No", "Memo No", "Order Date", "Bill Amount", "Previous Received", "Due Amount", "Amount", "Discount", "VDS", "TDS", "Total Amount", "Balance"].map((h) => (
-                    <th key={h} className="px-2 py-2 text-center font-medium">{h}</th>
-                  ))}
+                  <th className={formHeadCell}>SL</th>
+                  <th className={formHeadCell}>SO No</th>
+                  <th className={formHeadCell}>Memo No</th>
+                  <th className={formHeadCell}>Order Date</th>
+                  <th className={formHeadCell}>Bill Amount</th>
+                  <th className={formHeadCell}>Previous Received</th>
+                  <th className={formHeadCell}>Due Amount</th>
+                  <th className={formHeadCell}>Amount</th>
+                  <th className={formHeadCell}>Discount</th>
+                  <th className={formHeadCell}>VDS</th>
+                  <th className={formHeadCell}>TDS</th>
+                  <th className={formHeadCell}>Total Amount</th>
+                  <th className={formHeadCell}>Balance</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-center text-gray-700 dark:divide-white/[0.05] dark:text-gray-300">
                 {form.lines.length === 0 && (
                   <tr><td colSpan={13} className="py-4 text-gray-400">No due invoice. The whole lot amount is saved as advance.</td></tr>
                 )}
-                {form.lines.map((l, i) => {
-                  const total = lineTotal(lines[i] ?? EMPTY_LINE);
+                {form.lines.map((line, index) => {
+                  const total = lineTotal(lines[index] || emptyLine());
                   return (
-                    <tr key={l.sale_id ?? "ob"}>
-                      <td className="px-2 py-1.5">{i + 1}</td>
-                      <td className="px-2 py-1.5 font-medium">{orderLabel(l.order_no)}</td>
-                      <td className="px-2 py-1.5">{l.memo_no}</td>
-                      <td className="px-2 py-1.5">{l.order_date ? formatDate(l.order_date) : ""}</td>
-                      <td className="px-2 py-1.5 text-right">{formatMoney(l.bill_amount)}</td>
-                      <td className="px-2 py-1.5 text-right">{formatMoney(l.prev_received)}</td>
-                      <td className="px-2 py-1.5 text-right font-medium">{formatMoney(l.due)}</td>
-                      <td className="w-[100px] px-1 py-1.5">{numInput(i, "amount")}</td>
-                      <td className="w-[85px] px-1 py-1.5">{numInput(i, "discount")}</td>
-                      <td className="w-[75px] px-1 py-1.5">{numInput(i, "vds")}</td>
-                      <td className="w-[75px] px-1 py-1.5">{numInput(i, "tds")}</td>
+                    <tr key={line.sale_id ?? "ob"}>
+                      <td className="px-2 py-1.5">{index + 1}</td>
+                      <td className="px-2 py-1.5 font-medium">{orderLabel(line.order_no)}</td>
+                      <td className="px-2 py-1.5">{line.memo_no}</td>
+                      <td className="px-2 py-1.5">{line.order_date ? formatDate(line.order_date) : ""}</td>
+                      <td className="px-2 py-1.5 text-right">{formatMoney(line.bill_amount)}</td>
+                      <td className="px-2 py-1.5 text-right">{formatMoney(line.prev_received)}</td>
+                      <td className="px-2 py-1.5 text-right font-medium">{formatMoney(line.due)}</td>
+                      <td className="w-[100px] px-1 py-1.5">{numberInput(index, "amount")}</td>
+                      <td className="w-[85px] px-1 py-1.5">{numberInput(index, "discount")}</td>
+                      <td className="w-[75px] px-1 py-1.5">{numberInput(index, "vds")}</td>
+                      <td className="w-[75px] px-1 py-1.5">{numberInput(index, "tds")}</td>
                       <td className="px-2 py-1.5 text-right">{total > 0 ? formatMoney(total) : ""}</td>
-                      <td className="px-2 py-1.5 text-right">{total > 0 ? formatMoney(l.due - total) : ""}</td>
+                      <td className="px-2 py-1.5 text-right">{total > 0 ? formatMoney(line.due - total) : ""}</td>
                     </tr>
                   );
                 })}
@@ -305,15 +451,15 @@ export function MoneyReceiptFormModal({ customerId, onClose, onSaved }: MoneyRec
               <tfoot>
                 <tr className="border-t border-gray-200 text-right font-semibold text-gray-800 dark:border-gray-700 dark:text-white/90">
                   <td colSpan={4} className="px-2 py-2 text-left">Total</td>
-                  <td className="px-2 py-2">{formatMoney(form.lines.reduce((s, l) => s + l.bill_amount, 0))}</td>
-                  <td className="px-2 py-2">{formatMoney(form.lines.reduce((s, l) => s + l.prev_received, 0))}</td>
+                  <td className="px-2 py-2">{formatMoney(totalBill)}</td>
+                  <td className="px-2 py-2">{formatMoney(totalPrevReceived)}</td>
                   <td className="px-2 py-2">{formatMoney(totalDue)}</td>
                   <td className="px-2 py-2">{formatMoney(received)}</td>
-                  <td className="px-2 py-2">{formatMoney(sum("discount"))}</td>
-                  <td className="px-2 py-2">{formatMoney(sum("vds"))}</td>
-                  <td className="px-2 py-2">{formatMoney(sum("tds"))}</td>
-                  <td className="px-2 py-2">{formatMoney(lines.reduce((s, l) => s + lineTotal(l), 0))}</td>
-                  <td className="px-2 py-2">{formatMoney(totalDue - lines.reduce((s, l) => s + lineTotal(l), 0))}</td>
+                  <td className="px-2 py-2">{formatMoney(discount)}</td>
+                  <td className="px-2 py-2">{formatMoney(vds)}</td>
+                  <td className="px-2 py-2">{formatMoney(tds)}</td>
+                  <td className="px-2 py-2">{formatMoney(typedTotal)}</td>
+                  <td className="px-2 py-2">{formatMoney(totalDue - typedTotal)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -342,61 +488,93 @@ const PRINT_STYLE = `
 `;
 
 const cell = "border border-gray-200 px-2 py-1 dark:border-gray-700";
+const voucherHeadCell = `${cell} text-left font-medium`;
 
 // MR voucher: shown after saving and from Manage Money Receipt
 export function MoneyReceiptVoucherModal({ mrNo, onClose }: { mrNo: string | null; onClose: () => void }) {
-  const [data, setData] = useState<any>(null);
+  const [receipt, setReceipt] = useState<any>(null);
   const printArea = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setData(null);
-    if (mrNo) moneyReceiptService.getReceipt(mrNo).then(setData).catch(() => toast.error("Failed to load money receipt"));
+    setReceipt(null);
+    if (mrNo) {
+      moneyReceiptService.getReceipt(mrNo)
+        .then(setReceipt)
+        .catch(() => toast.error("Failed to load money receipt"));
+    }
   }, [mrNo]);
 
-  const print = () => {
-    if (printArea.current) printHtml(data?.mr_no ?? "Money Receipt", printArea.current.innerHTML, PRINT_STYLE);
-  };
+  function print() {
+    if (!printArea.current) {
+      return;
+    }
+    const title = receipt ? receipt.mr_no : "Money Receipt";
+    printHtml(title, printArea.current.innerHTML, PRINT_STYLE);
+  }
 
-  const r = data;
-  const total = (field: string) => r?.lines.reduce((s: number, l: any) => s + Number(l[field] ?? 0), 0) ?? 0;
+  // totals of the voucher lines
+  let totalAmount = 0;
+  let totalDiscount = 0;
+  let totalVds = 0;
+  let totalTds = 0;
+  if (receipt) {
+    for (const line of receipt.lines) {
+      totalAmount += Number(line.amount ?? 0);
+      totalDiscount += Number(line.discount ?? 0);
+      totalVds += Number(line.vds ?? 0);
+      totalTds += Number(line.tds ?? 0);
+    }
+  }
+
+  // bank, cheque no and cheque date in one line
+  let bankText = "";
+  if (receipt && receipt.bank_name) {
+    bankText = receipt.bank_name;
+    if (receipt.cheque_no) {
+      bankText += ` / Cheque ${receipt.cheque_no}`;
+    }
+    if (receipt.cheque_date) {
+      bankText += ` (${formatDate(receipt.cheque_date)})`;
+    }
+  }
 
   return (
     <Modal
-      isOpen={!!mrNo}
+      isOpen={mrNo !== null}
       onClose={onClose}
       className="max-w-4xl"
       title="Money Receipt"
       footer={
         <>
           <Button type="button" size="sm" variant="outline" onClick={onClose}>Close</Button>
-          <Button type="button" size="sm" onClick={print} disabled={!r}>Print</Button>
+          <Button type="button" size="sm" onClick={print} disabled={!receipt}>Print</Button>
         </>
       }
     >
-      {!r ? (
-        <p className="py-8 text-center text-sm text-gray-500">Loading...</p>
-      ) : (
+      {!receipt && <p className="py-8 text-center text-sm text-gray-500">Loading...</p>}
+
+      {receipt && (
         <div ref={printArea} className="text-[13px] text-gray-800 dark:text-gray-200">
           <div className="text-center">
-            <h2 className="text-lg font-semibold">{r.company?.name ?? "Money Receipt"}</h2>
-            {r.company?.address && <div className="text-xs text-gray-500">{r.company.address}</div>}
+            <h2 className="text-lg font-semibold">{receipt.company ? receipt.company.name : "Money Receipt"}</h2>
+            {receipt.company?.address && <div className="text-xs text-gray-500">{receipt.company.address}</div>}
             <h3 className="mt-1 text-sm font-semibold">MONEY RECEIPT</h3>
           </div>
 
           <div className="info my-3 flex flex-wrap justify-between gap-6">
             <table>
               <tbody>
-                <tr><td className="pr-3 text-gray-500">Received From</td><td className="font-semibold">{r.customer?.name}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Contact Number</td><td>{r.customer?.phone || "-"}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Address</td><td>{r.customer?.address || "-"}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Received From</td><td className="font-semibold">{receipt.customer?.name}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Contact Number</td><td>{receipt.customer?.phone || "-"}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Address</td><td>{receipt.customer?.address || "-"}</td></tr>
               </tbody>
             </table>
             <table>
               <tbody>
-                <tr><td className="pr-3 text-gray-500">MR No</td><td className="font-semibold">{r.mr_no}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Date</td><td>{formatDate(r.receipt_date)}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Receive Type</td><td>{paymentTypeName(r.received_type)}</td></tr>
-                {r.bank_name && <tr><td className="pr-3 text-gray-500">Bank</td><td>{r.bank_name}{r.cheque_no ? ` / Cheque ${r.cheque_no}` : ""}{r.cheque_date ? ` (${formatDate(r.cheque_date)})` : ""}</td></tr>}
+                <tr><td className="pr-3 text-gray-500">MR No</td><td className="font-semibold">{receipt.mr_no}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Date</td><td>{formatDate(receipt.receipt_date)}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Receive Type</td><td>{paymentTypeName(receipt.received_type)}</td></tr>
+                {bankText && <tr><td className="pr-3 text-gray-500">Bank</td><td>{bankText}</td></tr>}
               </tbody>
             </table>
           </div>
@@ -404,38 +582,44 @@ export function MoneyReceiptVoucherModal({ mrNo, onClose }: { mrNo: string | nul
           <table className="items w-full border-collapse text-xs">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-800">
-                {["SL", "SO No", "Bill Amount", "Previous Received", "Due Amount", "Amount", "Discount", "VDS", "TDS"].map((h) => (
-                  <th key={h} className={`${cell} text-left font-medium`}>{h}</th>
-                ))}
+                <th className={voucherHeadCell}>SL</th>
+                <th className={voucherHeadCell}>SO No</th>
+                <th className={voucherHeadCell}>Bill Amount</th>
+                <th className={voucherHeadCell}>Previous Received</th>
+                <th className={voucherHeadCell}>Due Amount</th>
+                <th className={voucherHeadCell}>Amount</th>
+                <th className={voucherHeadCell}>Discount</th>
+                <th className={voucherHeadCell}>VDS</th>
+                <th className={voucherHeadCell}>TDS</th>
               </tr>
             </thead>
             <tbody>
-              {r.lines.map((l: any, i: number) => (
-                <tr key={l.id}>
-                  <td className={cell}>{i + 1}</td>
-                  <td className={cell}>{orderLabel(l.order_no)}</td>
-                  <td className={`${cell} text-right`}>{formatMoney(l.bill_amount)}</td>
-                  <td className={`${cell} text-right`}>{formatMoney(l.prev_received_amount)}</td>
-                  <td className={`${cell} text-right`}>{formatMoney(l.receivable_amount)}</td>
-                  <td className={`${cell} text-right`}>{formatMoney(l.amount)}</td>
-                  <td className={`${cell} text-right`}>{formatMoney(l.discount)}</td>
-                  <td className={`${cell} text-right`}>{formatMoney(l.vds)}</td>
-                  <td className={`${cell} text-right`}>{formatMoney(l.tds)}</td>
+              {receipt.lines.map((line: any, index: number) => (
+                <tr key={line.id}>
+                  <td className={cell}>{index + 1}</td>
+                  <td className={cell}>{orderLabel(line.order_no)}</td>
+                  <td className={`${cell} text-right`}>{formatMoney(line.bill_amount)}</td>
+                  <td className={`${cell} text-right`}>{formatMoney(line.prev_received_amount)}</td>
+                  <td className={`${cell} text-right`}>{formatMoney(line.receivable_amount)}</td>
+                  <td className={`${cell} text-right`}>{formatMoney(line.amount)}</td>
+                  <td className={`${cell} text-right`}>{formatMoney(line.discount)}</td>
+                  <td className={`${cell} text-right`}>{formatMoney(line.vds)}</td>
+                  <td className={`${cell} text-right`}>{formatMoney(line.tds)}</td>
                 </tr>
               ))}
               <tr className="font-semibold">
                 <td colSpan={5} className={`${cell} text-right`}>Total</td>
-                <td className={`${cell} text-right`}>{formatMoney(total("amount"))}</td>
-                <td className={`${cell} text-right`}>{formatMoney(total("discount"))}</td>
-                <td className={`${cell} text-right`}>{formatMoney(total("vds"))}</td>
-                <td className={`${cell} text-right`}>{formatMoney(total("tds"))}</td>
+                <td className={`${cell} text-right`}>{formatMoney(totalAmount)}</td>
+                <td className={`${cell} text-right`}>{formatMoney(totalDiscount)}</td>
+                <td className={`${cell} text-right`}>{formatMoney(totalVds)}</td>
+                <td className={`${cell} text-right`}>{formatMoney(totalTds)}</td>
               </tr>
             </tbody>
           </table>
-          {r.remarks && <p className="mt-2 text-xs">Note: {r.remarks}</p>}
+          {receipt.remarks && <p className="mt-2 text-xs">Note: {receipt.remarks}</p>}
 
           <div className="sign mt-14 flex justify-between text-xs">
-            <span className="w-40 border-t border-gray-400 pt-1 text-center">Prepared By: {r.created_by?.name ?? ""}</span>
+            <span className="w-40 border-t border-gray-400 pt-1 text-center">Prepared By: {receipt.created_by ? receipt.created_by.name : ""}</span>
             <span className="w-40 border-t border-gray-400 pt-1 text-center">Authorised Signature</span>
           </div>
         </div>

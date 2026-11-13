@@ -64,16 +64,15 @@ export function CustomerForm({ status, openingBalanceType, customerTypes, stores
     }
   });
 
-  // Handle backend errors
+  // the API validation errors are shown under their fields
   useEffect(() => {
-    if (backendErrors) {
-      clearErrors();
-      Object.entries(backendErrors).forEach(([field, message]) => {
-        setError(field as keyof CustomerFormData, {
-          type: 'server',
-          message: Array.isArray(message) ? message[0] : message
-        });
-      });
+    if (!backendErrors) {
+      return;
+    }
+
+    clearErrors();
+    for (const field in backendErrors) {
+      setError(field as keyof CustomerFormData, { type: "server", message: backendErrors[field] });
     }
   }, [backendErrors, setError, clearErrors]);
 
@@ -268,11 +267,14 @@ export function CustomerForm({ status, openingBalanceType, customerTypes, stores
                   message: "Opening balance is too large"
                 },
                 validate: (value) => {
-                  // Handle null/undefined case
-                  if (value === null || value === undefined) return true;
+                  // an empty box is fine
+                  if (value === null || value === undefined) {
+                    return true;
+                  }
 
-                  // Ensure it's a valid number
-                  if (isNaN(value)) return "Please enter a valid number";
+                  if (isNaN(value)) {
+                    return "Please enter a valid number";
+                  }
 
                   // Check decimal places
                   const stringValue = value.toString();

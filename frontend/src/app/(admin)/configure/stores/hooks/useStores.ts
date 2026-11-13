@@ -1,206 +1,193 @@
-// hooks/useStores.ts
-import { formatDate } from '@/lib/format';
-import { useState, useCallback, useEffect } from 'react';
-import { toast } from 'react-toastify';
-import { storeService, Store, StoreFilters, PaginatedResponse } from '@/services/storeService';
-import { lookupService } from '@/services/lookupService';
-import { useAlert } from '@/hooks/useAlert';
-import { useModal } from '@/hooks/useModal';
-import { useDebounce } from '@/hooks/useDebounce';
-import { api } from '@/lib/api';
+// Store Setup: the store list, its filters, the modal and the company dropdown
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "react-toastify";
+import { useAlert } from "@/hooks/useAlert";
+import { useModal } from "@/hooks/useModal";
+import { useDebounce } from "@/hooks/useDebounce";
+import { api } from "@/lib/api";
+import { formatDate } from "@/lib/format";
+import { apiErrorMessage, apiFieldErrors } from "@/lib/options";
+import { storeService, Store } from "@/services/storeService";
+import { lookupService } from "@/services/lookupService";
+
+type IdOption = { value: number; label: string };
+
+// an id / name list from the API as select options
+function idOptions(list: { id: number | string; name: string }[]): IdOption[] {
+  const result: IdOption[] = [];
+  for (const item of list) {
+    result.push({ value: Number(item.id), label: item.name });
+  }
+  return result;
+}
+
 export const useStores = () => {
   const { confirm } = useAlert();
   const { isOpen, openModal, closeModal } = useModal();
 
-  // Data state
-  const [companies, setCompanies] = useState<{ value: number; label: string }[]>([]);
-  const [loadingCompanies, setLoadingCompanies] = useState(false);
   const [stores, setStores] = useState<Store[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ value: number; label: string }[]>([]);
 
-  // Modal state
+  // company dropdown of the form, loaded when the form opens
+  const [companies, setCompanies] = useState<IdOption[]>([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(false);
+
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
-  const [mode, setMode] = useState<'view' | 'edit' | 'create'>('create');
+  const [mode, setMode] = useState<"view" | "edit" | "create">("create");
   const [backendErrors, setBackendErrors] = useState<Record<string, string>>({});
 
-  // Filter and pagination state
   const [filters, setFilters] = useState<Record<string, string | number>>({});
   const debouncedFilters = useDebounce(filters, 300);
-  const [pagination, setPagination] = useState({
-    pageIndex: 0,
-    pageSize: 10,
-  });
-  const [total, setTotal] = useState(0);
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
-
-  // Load stores
   const loadStores = useCallback(async () => {
     try {
       setLoading(true);
-      const apiFilters: StoreFilters = {
-        page: pagination.pageIndex + 1,
-        per_page: pagination.pageSize,
-        ...debouncedFilters,
-      };
-
-      const response: PaginatedResponse<Store> = await storeService.getStores(apiFilters);
+      const response = await storeService.getStores({ ...debouncedFilters, page: pagination.pageIndex + 1, per_page: pagination.pageSize });
       setStores(response.data);
       setTotal(response.total);
-    } catch (err) {
-      toast.error('Failed to load stores');
-      console.error('Error loading stores:', err);
+    } catch {
+      toast.error("Failed to load stores");
     } finally {
       setLoading(false);
     }
   }, [pagination.pageIndex, pagination.pageSize, debouncedFilters]);
 
-  const fetchLookups = async () => {
-    try {
-      const type = "active_status";
-      const res = await lookupService.getLookupByType(type);
-      setStatus(res);
-    } catch (error) {
-      console.error("Failed to fetch lookups", error);
-    }
-  };
-
-  const fetchCompanies = async () => {
-   
-    setLoadingCompanies(true);
-    try {
-      const res = await api.get("/configure/companies", { params: { status: 1, per_page: null, columns: ['id','name'] } });
-      setCompanies(res.data.data.data.map((com) => ({ value: Number(com.id), label: com.name })));
-      setLoadingCompanies(false);
-    } catch (error) {
-      console.error("Failed to fetch companies", error);
-      setLoadingCompanies(false);
-    }   
-  };
-
   useEffect(() => {
     loadStores();
   }, [loadStores]);
 
-  // for active status lookup
+  // the status dropdown is loaded once
   useEffect(() => {
-    fetchLookups();
+    async function loadStatus() {
+      try {
+        setStatus(await lookupService.getLookupByType("active_status"));
+      } catch (error) {
+        console.error("Failed to fetch lookups", error);
+      }
+    }
+    loadStatus();
   }, []);
 
+  const loadCompanies = useCallback(async () => {
+    setLoadingCompanies(true);
+    try {
+      const response = await api.get("/configure/companies", { params: { status: 1, per_page: null, columns: ["id", "name"] } });
+      setCompanies(idOptions(response.data.data.data));
+    } catch (error) {
+      console.error("Failed to fetch companies", error);
+    } finally {
+      setLoadingCompanies(false);
+    }
+  }, []);
 
-  // Modal operations
   const handleView = useCallback((store: Store) => {
     setSelectedStore(store);
-    setMode('view');
+    setMode("view");
     setBackendErrors({});
     openModal();
   }, [openModal]);
 
   const handleEdit = useCallback((store: Store) => {
     setSelectedStore(store);
-    setMode('edit');
+    setMode("edit");
     setBackendErrors({});
-    fetchCompanies();
+    loadCompanies();
     openModal();
-  }, [openModal]);
+  }, [openModal, loadCompanies]);
 
   const handleCreate = useCallback(() => {
     setSelectedStore(null);
-    setMode('create');
+    setMode("create");
     setBackendErrors({});
-    fetchCompanies();
+    loadCompanies();
     openModal();
-  }, [openModal]);
+  }, [openModal, loadCompanies]);
 
   const handleCloseModal = useCallback(() => {
     closeModal();
     setSelectedStore(null);
-    setMode('create');
+    setMode("create");
     setBackendErrors({});
   }, [closeModal]);
 
-  // CRUD operations
+  // move to trash
   const handleSoftDelete = useCallback(async (id: number) => {
     const result = await confirm({
-      title: 'Move to Trash?',
-      text: 'Are you sure you want to move this Store to trash? This action cannot be undone.',
+      title: "Move to Trash?",
+      text: "Are you sure you want to move this Store to trash? This action cannot be undone.",
     });
-
-    if (!result.isConfirmed) return;
-    let previousStores: Store[] = [];
-    try {
-      // Optimistic update
-      previousStores = [...stores];
-      setStores(prev => prev.filter(store => store.id !== id));
-      await storeService.softDeleteStore(id);
-      toast.success('Store moved to trashed!');
-      await loadStores();
-    } catch (err) {
-      // Revert on error
-      setStores(previousStores);
-      toast.error('Failed to delete Store');
+    if (!result.isConfirmed) {
+      return;
     }
-  }, [confirm, stores, loadStores]);
 
+    try {
+      await storeService.softDeleteStore(id);
+      toast.success("Store moved to trashed!");
+      await loadStores();
+    } catch {
+      toast.error("Failed to delete Store");
+    }
+  }, [confirm, loadStores]);
+
+  // delete for ever (only a store in the trash)
   const handleForceDelete = useCallback(async (id: number) => {
     const result = await confirm({
-      title: 'Delete Store?',
-      text: 'Are you sure you want to delete this Store? This action cannot be undone.',
+      title: "Delete Store?",
+      text: "Are you sure you want to delete this Store? This action cannot be undone.",
     });
-
-    if (!result.isConfirmed) return;
-
-    let previousStores: Store[] = [];
-    try {
-      // Optimistic update
-      previousStores = [...stores];
-      setStores(prev => prev.filter(store => store.id !== id));
-      await storeService.forceDeleteStore(id);
-      toast.success('Store deleted successfully!');
-      await loadStores();
-    } catch (err) {
-      // Revert on error
-      setStores(previousStores);
-      toast.error('Failed to delete Store');
+    if (!result.isConfirmed) {
+      return;
     }
-  }, [confirm, stores, loadStores]);
 
+    try {
+      await storeService.forceDeleteStore(id);
+      toast.success("Store deleted successfully!");
+      await loadStores();
+    } catch {
+      toast.error("Failed to delete Store");
+    }
+  }, [confirm, loadStores]);
+
+  // take back from trash
   const handleRestore = useCallback(async (id: number) => {
     try {
       await storeService.restoreStore(id);
-      toast.success('Store restored successfully!');
+      toast.success("Store restored successfully!");
       await loadStores();
-    } catch (err) {
-      // Revert on error
-      toast.error('Failed to restore Store');
+    } catch {
+      toast.error("Failed to restore Store");
     }
-  }, [stores, loadStores]);
+  }, [loadStores]);
 
   const handleSave = useCallback(async (storeData: { name: string, company_id: number, code?: string, address?: string, status?: string }) => {
     try {
       setSaving(true);
       setBackendErrors({});
-      if (mode === 'edit' && selectedStore) {
+
+      if (mode === "edit" && selectedStore) {
         await storeService.updateStore(selectedStore.id, storeData);
-        toast.success('Store updated successfully!');
+        toast.success("Store updated successfully!");
       } else {
         await storeService.createStore(storeData);
-        toast.success('Store created successfully!');
-        setPagination(prev => ({ ...prev, pageIndex: 0 }));
+        toast.success("Store created successfully!");
+        // a new store is on the first page
+        setPagination((oldPagination) => ({ ...oldPagination, pageIndex: 0 }));
       }
+
       handleCloseModal();
       await loadStores();
       return true;
-    } catch (err: any) {
-      if (err?.response?.data?.errors) {
-        const errors: Record<string, string> = {};
-        Object.entries(err.response.data.errors).forEach(([field, messages]) => {
-          errors[field] = Array.isArray(messages) ? messages[0] : messages;
-        });
-        setBackendErrors(errors);
+    } catch (err) {
+      // validation errors are shown under the fields, any other error as a message
+      const fieldErrors = apiFieldErrors(err);
+      if (Object.keys(fieldErrors).length > 0) {
+        setBackendErrors(fieldErrors);
       } else {
-        toast.error(err?.response?.data?.message || 'Failed to save Store');
+        toast.error(apiErrorMessage(err, "Failed to save Store"));
       }
       return false;
     } finally {
@@ -208,37 +195,18 @@ export const useStores = () => {
     }
   }, [mode, selectedStore, loadStores, handleCloseModal]);
 
-
-  // Filter and search operations
   const handleFilterChange = useCallback((name: string, value: string | number) => {
-    setFilters((prev) => ({ ...prev, [name]: value }));
-    setPagination(prev => ({ ...prev, pageIndex: 0 }));
+    setFilters((oldFilters) => ({ ...oldFilters, [name]: value }));
+    setPagination((oldPagination) => ({ ...oldPagination, pageIndex: 0 }));
   }, []);
 
-
-  // Utility functions
-  const clearBackendErrors = useCallback(() => {
-    setBackendErrors({});
-  }, []);
-
-  const resetToFirstPage = useCallback(() => {
-    setPagination(prev => ({ ...prev, pageIndex: 0 }));
-  }, []);
-
-  // Export all stores (no pagination)
-  const exportAllStores = async () => {
-    try {
-      // Call API without pagination to get all data
-      const response = await storeService.getStores({});
-      return response.data;
-    } catch (error) {
-      console.error('Error exporting all stores:', error);
-      throw error;
-    }
-  };
+  // all stores for the export, without paging
+  async function exportAllStores() {
+    const response = await storeService.getStores({});
+    return response.data;
+  }
 
   return {
-    // State
     stores,
     companies,
     loadingCompanies,
@@ -252,7 +220,6 @@ export const useStores = () => {
     total,
     status,
 
-    // Actions
     setPagination,
     handleView,
     handleEdit,
@@ -263,9 +230,6 @@ export const useStores = () => {
     handleRestore,
     handleSave,
     handleFilterChange,
-    clearBackendErrors,
-    resetToFirstPage,
-    loadStores,
     exportAllStores,
     formatDate,
   };

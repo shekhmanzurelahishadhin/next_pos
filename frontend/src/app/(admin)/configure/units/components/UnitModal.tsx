@@ -13,7 +13,7 @@ interface UnitModalProps {
   saving: boolean;
   onClose: () => void;
   onSave: (unitData: { name: string }) => void;
-  backendErrors?: Record<string, string>; // Add this prop
+  backendErrors?: Record<string, string>;
   formatDate: (dateString?: string) => string;
 }
 
@@ -25,28 +25,31 @@ export function UnitModal({
   saving,
   onClose,
   onSave,
-  backendErrors, // Add this prop
+  backendErrors,
   formatDate,
 }: UnitModalProps) {
-  const getTitle = () => {
-    switch (mode) {
-      case 'view': return 'Unit Details';
-      case 'edit': return 'Edit Unit';
-      case 'create': return 'Add New Unit';
-      default: return 'Unit';
-    }
-  };
+  let title = "Add New Unit";
+  let modalSize = "max-w-md";
+  if (mode === "view") {
+    title = "Unit Details";
+    modalSize = "max-w-2xl";
+  } else if (mode === "edit") {
+    title = "Edit Unit";
+  }
 
-  const getModalSize = () => {
-    return mode === 'view' ? 'max-w-2xl' : 'max-w-md';
-  };
+  let submitText = "Create";
+  if (saving) {
+    submitText = "Saving...";
+  } else if (mode === "edit") {
+    submitText = "Update";
+  }
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      className={getModalSize()}
-      title={getTitle()}
+      className={modalSize}
+      title={title}
       footer={
       <>
         {mode === 'view' ? (
@@ -75,7 +78,7 @@ export function UnitModal({
               size="sm"
               disabled={saving}
             >
-              {saving ? 'Saving...' : (mode === 'edit' ? 'Update' : 'Create')}
+              {submitText}
             </Button>
           </>
         )}
@@ -94,7 +97,7 @@ export function UnitModal({
             mode={mode}
             saving={saving}
             onSubmit={onSave}
-            backendErrors={backendErrors} // backend errors to form
+            backendErrors={backendErrors}
           />
         )}
       </div>

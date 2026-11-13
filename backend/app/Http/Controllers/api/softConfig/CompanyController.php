@@ -10,6 +10,7 @@ use App\Http\Resources\softConfig\company\CompanyResource;
 use App\Models\softConfig\Company;
 use App\Services\softConfig\CompanyService;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 
 class CompanyController extends Controller
 {
@@ -27,36 +28,35 @@ class CompanyController extends Controller
     public function index(Request $request, CompanyService $companyService)
     {
         try {
-        $perPage = $request->get('per_page');
-        $filters = $request->only('search','status','name','email','code','address','created_at','created_by');
+            $perPage = $request->get('per_page');
+            $filters = $request->only('search', 'status', 'name', 'email', 'code', 'address', 'created_at', 'created_by');
             $columns = $request->get('columns', CompanyService::defaultColumns);
 
-        $companies = $companyService->getCompanies($filters, $perPage, $columns);
+            $companies = $companyService->getCompanies($filters, $perPage, $columns);
 
-        if ($companies instanceof \Illuminate\Pagination\LengthAwarePaginator) {
-            $items = collect($companies->items())->map(fn($company) => new CompanyResource((object) $company, $columns));
-            // Paginated response
-            $data = [
-                'data' => $items,
-                'total' => $companies->total(),
-                'current_page' => $companies->currentPage(),
-                'per_page' => $companies->perPage(),
-            ];
-        }else {
-            // Collection response (no pagination)
-            $items = collect($companies)->map(fn($company) => new CompanyResource((object) $company, $columns));
-            $data = [
-                'data' => $items,
-                'total' => $companies->count(),
-                'current_page' => 1,
-                'per_page' => $companies->count(),
-            ];
-        }
+            if ($companies instanceof LengthAwarePaginator) {
+                // one page of companies
+                $data = [
+                    'data' => $this->resources($companies->items(), $columns),
+                    'total' => $companies->total(),
+                    'current_page' => $companies->currentPage(),
+                    'per_page' => $companies->perPage(),
+                ];
+            } else {
+                // every company (no per_page given)
+                $data = [
+                    'data' => $this->resources($companies, $columns),
+                    'total' => $companies->count(),
+                    'current_page' => 1,
+                    'per_page' => $companies->count(),
+                ];
+            }
 
             return ApiResponse::success($data, 'Companies retrieved successfully');
-
         } catch (\Exception $e) {
-            return ApiResponse::serverError('Failed to retrieve companies'.$e);
+            // the error is written to the log, not sent to the browser
+            report($e);
+            return ApiResponse::serverError('Failed to retrieve companies');
         }
     }
 
@@ -139,5 +139,15 @@ class CompanyController extends Controller
         return response()->json([
             'message' => 'Company is not in trash',
         ], 400);
+    }
+
+    // each row as a resource with only the asked columns
+    private function resources($rows, $columns)
+    {
+        $items = [];
+        foreach ($rows as $row) {
+            $items[] = new CompanyResource((object) $row, $columns);
+        }
+        return $items;
     }
 }

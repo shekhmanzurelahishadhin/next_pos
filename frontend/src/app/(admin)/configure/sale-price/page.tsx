@@ -13,6 +13,22 @@ import { ProductPriceRow } from "@/services/productPriceService";
 import { productColumns, useProductPriceList } from "../_product-prices/useProductPriceList";
 import { SellPriceHistoryModal, SellPriceModal } from "../_product-prices/PriceModals";
 
+// the sell price, "—" when the product has none
+function priceText(price: number | null) {
+  if (price === null) {
+    return "—";
+  }
+  return formatMoney(price);
+}
+
+// the discount as "5%", "—" when the product has none
+function discountText(discount: number | null) {
+  if (discount === null) {
+    return "—";
+  }
+  return Number(discount) + "%";
+}
+
 // parts_bazar "Add Sale Prices": active sell price and discount of each product, history, add a new one
 export default function SalePricePage() {
   const { hasPermission } = useAuth();
@@ -32,7 +48,7 @@ export default function SalePricePage() {
       meta: { filterVariant: "none", widthClass: "w-[120px]" },
       cell: ({ row }) => (
         <span className="block text-right font-medium text-error-600 dark:text-error-400">
-          {row.original.sell_price === null ? "—" : formatMoney(row.original.sell_price)}
+          {priceText(row.original.sell_price)}
         </span>
       ),
     },
@@ -40,7 +56,7 @@ export default function SalePricePage() {
       id: "discount",
       header: "Discount (%)",
       meta: { filterVariant: "none", widthClass: "w-[90px]" },
-      cell: ({ row }) => <span className="block text-right">{row.original.discount === null ? "—" : `${Number(row.original.discount)}%`}</span>,
+      cell: ({ row }) => <span className="block text-right">{discountText(row.original.discount)}</span>,
     },
     {
       id: "actions",

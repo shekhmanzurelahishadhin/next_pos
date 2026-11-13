@@ -13,7 +13,7 @@ interface CompanyModalProps {
   saving: boolean;
   onClose: () => void;
   onSave: (companyData: { name: string }) => void;
-  backendErrors?: Record<string, string>; // Add this prop
+  backendErrors?: Record<string, string>;
   formatDate: (dateString?: string) => string;
 }
 
@@ -25,28 +25,31 @@ export function CompanyModal({
   saving,
   onClose,
   onSave,
-  backendErrors, // Add this prop
+  backendErrors,
   formatDate,
 }: CompanyModalProps) {
-  const getTitle = () => {
-    switch (mode) {
-      case 'view': return 'Company Details';
-      case 'edit': return 'Edit Company';
-      case 'create': return 'Add New Company';
-      default: return 'Company';
-    }
-  };
+  let title = "Add New Company";
+  let modalSize = "max-w-md";
+  if (mode === "view") {
+    title = "Company Details";
+    modalSize = "max-w-2xl";
+  } else if (mode === "edit") {
+    title = "Edit Company";
+  }
 
-  const getModalSize = () => {
-    return mode === 'view' ? 'max-w-2xl' : 'max-w-md';
-  };
+  let submitText = "Create";
+  if (saving) {
+    submitText = "Saving...";
+  } else if (mode === "edit") {
+    submitText = "Update";
+  }
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      className={getModalSize()}
-      title={getTitle()}
+      className={modalSize}
+      title={title}
       footer={
       <>
         {mode === 'view' ? (
@@ -75,7 +78,7 @@ export function CompanyModal({
               size="sm"
               disabled={saving}
             >
-              {saving ? 'Saving...' : (mode === 'edit' ? 'Update' : 'Create')}
+              {submitText}
             </Button>
           </>
         )}
@@ -94,7 +97,7 @@ export function CompanyModal({
             mode={mode}
             saving={saving}
             onSubmit={onSave}
-            backendErrors={backendErrors} // backend errors to form
+            backendErrors={backendErrors}
           />
         )}
       </div>

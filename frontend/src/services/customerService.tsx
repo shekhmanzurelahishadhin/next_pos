@@ -1,8 +1,5 @@
 import { api } from "@/lib/api";
-
-// Simple in-memory cache
-const cache = new Map();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+import { removeEmpty } from "@/lib/options";
 
 export interface Customer {
     id: number;
@@ -54,63 +51,13 @@ export interface CustomerFilters {
 }
 
 class CustomerService {
-    private getCacheKey(filters: CustomerFilters): string {
-        return `customers_${JSON.stringify(filters)}`;
-    }
-
-    private setCache(key: string, data: any): void {
-        cache.set(key, {
-            data,
-            timestamp: Date.now()
-        });
-    }
-
-    private getCache(key: string): any {
-        const cached = cache.get(key);
-        // check expiration
-        if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
-            return cached.data;
-        }
-        cache.delete(key); // expired → delete it
-        return null;
-    }
-
     async getCustomers(filters: CustomerFilters = {}): Promise<PaginatedResponse<Customer>> {
-        // Don't cache searches
-        // if (!filters.search) {
-        //   const cacheKey = this.getCacheKey(filters);
-        //   const cached = this.getCache(cacheKey);
-        //   console.log('RoleService.getRoles - cacheKey:', cacheKey, 'cached:', cached);
-        //   if (cached) return cached;
-        // }
-
-        const params = new URLSearchParams();
-
-        // Common filter fields
-        if (filters.page) params.append('page', filters.page.toString());
-        if (filters.per_page) params.append('per_page', filters.per_page.toString());
-
-        // Specific filter fields
-        if (filters.name) params.append('name', filters.name);
-        if (filters.slug) params.append('slug', filters.slug);
-        if (filters.code) params.append('code', filters.code);
-        if (filters.email) params.append('email', filters.email);
-        if (filters.phone) params.append('phone', filters.phone);
-        if (filters.address) params.append('address', filters.address);
-        if (filters.status) params.append('status', filters.status);
-        if (filters.opening_balance_type) params.append('opening_balance_type', filters.opening_balance_type.toString());
-        if (filters.opening_balance) params.append('opening_balance', filters.opening_balance.toString());
-        if (filters.created_at) params.append('created_at', filters.created_at);
-        if (filters.updated_at) params.append('updated_at', filters.updated_at);
-
-        const response = await api.get(`/sales/customers?${params}`);
-        const result = response.data.data;
-
-        return result;
+        // only the filled filters go to the API
+        const response = await api.get('/sales/customers', { params: removeEmpty({ ...filters }) });
+        return response.data.data;
     }
 
     async createCustomer(customerData: { name: string, code: string, email: string, phone: string, address: string, opening_balance_type: number, opening_balance: number }): Promise<Customer> {
-
         const response = await api.post('/sales/customers', customerData);
         return response.data.data;
     }

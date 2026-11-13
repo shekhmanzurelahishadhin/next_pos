@@ -67,7 +67,7 @@ export default function Customers() {
       <div>
          <PageBreadcrumb
           items={[
-            { title: "Purchase" }, // add href if needed links like href: "/admin/authorization/permissions"
+            { title: "Sales" },
             { title: "Customer Management" }
           ]}
         />

@@ -74,7 +74,14 @@ export const usePpSpSetupColumns = ({
         filterVariant: "none",
         exportable: true,
         exportHeader: "Codes",
-        exportValue: (row) => row.codes.map((code, digit) => `${digit}=${code}`).join(" "),
+        exportValue: (row) => {
+          // "0=A 1=B ..."
+          const parts: string[] = [];
+          for (let digit = 0; digit < row.codes.length; digit++) {
+            parts.push(digit + "=" + row.codes[digit]);
+          }
+          return parts.join(" ");
+        },
         widthClass: "w-[440px]"
       },
       cell: ({ row }) => <CodeChips codes={row.original.codes} />,

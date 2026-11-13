@@ -26,13 +26,20 @@ class SaleController extends Controller
     // Sales Manage: one row per sold barcode
     public function index(Request $request)
     {
-        $rows = $this->service->getSaleRows(
-            $request->only('status', 'cash_due', 'so_no', 'customer_name', 'store_id', 'location_name', 'product_name', 'part_number', 'barcode', 'order_date'),
-            $request->get('per_page')
-        );
+        $filters = $request->only('status', 'cash_due', 'so_no', 'customer_name', 'store_id', 'location_name',
+            'product_name', 'part_number', 'barcode', 'order_date');
+        $rows = $this->service->getSaleRows($filters, $request->get('per_page'));
+
+        // add the status name to every row
+        $data = [];
+        foreach ($rows->items() as $row) {
+            $item = (array) $row;
+            $item['status_name'] = Sale::STATUS_NAMES[$row->status] ?? '';
+            $data[] = $item;
+        }
 
         return ApiResponse::success([
-            'data'  => collect($rows->items())->map(fn($row) => (array) $row + ['status_name' => Sale::STATUS_NAMES[$row->status] ?? '']),
+            'data'  => $data,
             'total' => $rows->total(),
         ], 'Sales retrieve successfully');
     }
@@ -44,68 +51,99 @@ class SaleController extends Controller
 
     public function searchCustomers(Request $request)
     {
-        return ApiResponse::success($this->service->searchCustomers(trim((string) $request->get('term'))), 'Customers');
+        $term = trim((string) $request->get('term'));
+        return ApiResponse::success($this->service->searchCustomers($term), 'Customers');
     }
 
     public function searchBarcodes(Request $request)
     {
-        return ApiResponse::success($this->service->searchBarcodes(
-            trim((string) $request->get('term')),
-            $request->integer('company_id') ?: null,
-            $request->integer('sale_id') ?: null
-        ), 'Barcodes');
+        $term = trim((string) $request->get('term'));
+
+        // 0 or empty = every company / no SO left out
+        $companyId = $request->integer('company_id') ?: null;
+        $exceptSaleId = $request->integer('sale_id') ?: null;
+
+        return ApiResponse::success($this->service->searchBarcodes($term, $companyId, $exceptSaleId), 'Barcodes');
     }
 
     public function show(int $id)
     {
         $sale = $this->service->getSale($id);
-        $lookup = fn(string $type, $code) => Lookup::where('type', $type)->where('code', $code)->value('name');
 
-        return ApiResponse::success($sale->toArray() + [
-            'cash_due_name'      => $lookup('cash_due', $sale->cash_due),
-            'received_type_name' => $lookup('payment_type', $sale->received_type),
-            'status_name'        => Sale::STATUS_NAMES[$sale->status] ?? '',
-            'customer_due'       => $this->service->customerDue($sale->customer_id),
-        ], 'Sale retrieve successfully');
+        $data = $sale->toArray();
+        $data['cash_due_name'] = $this->lookupName('cash_due', $sale->cash_due);
+        $data['received_type_name'] = $this->lookupName('payment_type', $sale->received_type);
+        $data['status_name'] = Sale::STATUS_NAMES[$sale->status] ?? '';
+        $data['customer_due'] = $this->service->customerDue($sale->customer_id);
+
+        return ApiResponse::success($data, 'Sale retrieve successfully');
     }
 
     public function store(SaleRequest $request)
     {
-        return $this->run(fn() => $this->service->createSale($request->validated()), 'Data saved successfully.', 201);
+        try {
+            $sale = $this->service->createSale($request->validated());
+            return ApiResponse::success(['id' => $sale->id, 'so_no' => $sale->so_no], 'Data saved successfully.', 201);
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function update(SaleRequest $request, Sale $sale)
     {
-        return $this->run(fn() => $this->service->updateSale($sale, $request->validated()), 'Sale updated successfully.');
+        try {
+            $sale = $this->service->updateSale($sale, $request->validated());
+            return ApiResponse::success(['id' => $sale->id, 'so_no' => $sale->so_no], 'Sale updated successfully.');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function destroy(Sale $sale)
     {
-        return $this->run(fn() => $this->service->deleteSale($sale), 'Deleted Successfully!');
+        try {
+            $this->service->deleteSale($sale);
+            return ApiResponse::success(null, 'Deleted Successfully!');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function destroyItem(SaleDetail $saleDetail)
     {
-        return $this->run(fn() => $this->service->deleteSaleItem($saleDetail), 'Item deleted');
+        try {
+            $this->service->deleteSaleItem($saleDetail);
+            return ApiResponse::success(null, 'Item deleted');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
     public function approve(Sale $sale)
     {
-        return $this->run(fn() => $this->service->approveSale($sale), 'Sale approved');
+        try {
+            $this->service->approveSale($sale);
+            return ApiResponse::success(null, 'Sale approved');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e);
+        }
     }
 
-    // business rule errors go back as 422 with the message
-    private function run(callable $action, string $message, int $code = 200)
+    // name of a lookup code, e.g. cash_due 1 = "Cash"
+    private function lookupName(string $type, $code)
     {
-        try {
-            $result = $action();
-            $data = $result instanceof Sale ? ['id' => $result->id, 'so_no' => $result->so_no] : null;
-            return ApiResponse::success($data, $message, $code);
-        } catch (\RuntimeException $e) {
+        return Lookup::where('type', $type)->where('code', $code)->value('name');
+    }
+
+    // A business rule error goes back as 422 with its message,
+    // any other error is logged and a general message is sent
+    private function errorResponse(\Exception $e)
+    {
+        if ($e instanceof \RuntimeException) {
             return ApiResponse::error($e->getMessage(), 422);
-        } catch (\Exception $e) {
-            report($e);
-            return ApiResponse::serverError('Something went wrong, please try again');
         }
+
+        report($e);
+        return ApiResponse::serverError('Something went wrong, please try again');
     }
 }

@@ -85,11 +85,8 @@ export function SupplierForm({ status, openingBalanceType, supplier, mode, savin
     }
   }, [supplier, reset, mode]);
 
-  const onFormSubmit = (data: SupplierFormData) => {
-    onSubmit(data);
-  };
   return (
-    <form id="supplier-form" onSubmit={handleSubmit(onFormSubmit)}>
+    <form id="supplier-form" onSubmit={handleSubmit(onSubmit)}>
       <div className="space-y-3">
         <div>
           <Label htmlFor="name" required>Supplier Name</Label>
@@ -217,19 +214,18 @@ export function SupplierForm({ status, openingBalanceType, supplier, mode, savin
                 message: "Opening balance is too large"
               },
               validate: (value) => {
-                // Handle null/undefined case
-                if (value === null || value === undefined) return true;
+                if (value === null || value === undefined) {
+                  return true;
+                }
+                if (isNaN(value)) {
+                  return "Please enter a valid number";
+                }
 
-                // Ensure it's a valid number
-                if (isNaN(value)) return "Please enter a valid number";
-
-                // Check decimal places
-                const stringValue = value.toString();
-                const decimalPart = stringValue.split('.')[1];
+                // not more than 2 digits after the point
+                const decimalPart = value.toString().split(".")[1];
                 if (decimalPart && decimalPart.length > 2) {
                   return "Maximum 2 decimal places allowed";
                 }
-
                 return true;
               }
             })}

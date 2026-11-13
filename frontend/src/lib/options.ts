@@ -45,6 +45,19 @@ export function removeEmpty(filters: Record<string, string | number>): Record<st
   return params;
 }
 
+// only the named filters that have a value (0 and "" are left out), to send to the API
+export function pickFilters(filters: object, names: string[]): Record<string, string | number> {
+  const values = filters as Record<string, string | number | undefined>;
+  const params: Record<string, string | number> = {};
+  for (const name of names) {
+    const value = values[name];
+    if (value) {
+      params[name] = value;
+    }
+  }
+  return params;
+}
+
 // The message to show for a failed API call:
 // the first validation error, or else the message the API sent, or else the fallback
 export function apiErrorMessage(err: unknown, fallback: string): string {

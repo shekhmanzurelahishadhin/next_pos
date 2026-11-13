@@ -13,23 +13,21 @@ interface CompanyDetailViewProps {
 export function CompanyDetailView({ company, formatDate }: CompanyDetailViewProps) {
   const [imageError, setImageError] = useState(false);
   
-  // Helper function to get full logo URL
+  // full URL of the logo: as it is when it is already a URL, else the file in Laravel storage
   const getLogoUrl = useMemo(() => {
-    if (!company.logo) return null;
-    
-    // If logo already has full URL, use it
+    if (!company.logo) {
+      return null;
+    }
     if (company.logo.startsWith('http://') || company.logo.startsWith('https://')) {
       return company.logo;
     }
-    
-    // Get backend URL from environment variable
+
     const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-    
-    // Remove any leading slashes from the logo path
-    const logoPath = company.logo.startsWith('/') ? company.logo.slice(1) : company.logo;
-    
-    // Construct the full URL to access the logo from Laravel storage
-    return `${baseUrl}/storage/${logoPath}`;
+    let logoPath = company.logo;
+    if (logoPath.startsWith('/')) {
+      logoPath = logoPath.slice(1);
+    }
+    return baseUrl + "/storage/" + logoPath;
   }, [company.logo]);
 
   // For Next.js Image component, we need to configure the domain in next.config.js

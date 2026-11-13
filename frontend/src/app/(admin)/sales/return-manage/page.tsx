@@ -12,8 +12,8 @@ import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import ComponentCard from "@/components/common/ComponentCard";
 import { DataTable } from "@/components/tables/DataTable";
 import ActionButtons from "@/components/ui/button/ActionButton";
-import { api } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/format";
+import { apiErrorMessage, loadOptions, Option } from "@/lib/options";
 import { saleReturnService, SaleReturnRow } from "@/services/saleReturnService";
 import { SaleReturnChalanModal } from "../components/SaleReturnModals";
 
@@ -26,7 +26,7 @@ export default function SalesReturnManage() {
   const [rows, setRows] = useState<SaleReturnRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [stores, setStores] = useState<{ value: string; label: string }[]>([]);
+  const [stores, setStores] = useState<Option[]>([]);
   const [filters, setFilters] = useState<Record<string, string | number>>({});
   const debouncedFilters = useDebounce(filters, 300);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 });
@@ -51,8 +51,9 @@ export default function SalesReturnManage() {
 
   useEffect(() => {
     document.title = "Sales Return Manage | Multibrand POS";
-    api.get("/configure/stores", { params: { status: 1 } })
-      .then((res) => setStores(res.data.data.data.map((s: any) => ({ value: String(s.id), label: s.name }))))
+    // the store list is only for the filter, the page still works without it
+    loadOptions("/configure/stores")
+      .then(setStores)
       .catch(() => {});
   }, []);
 
@@ -63,19 +64,27 @@ export default function SalesReturnManage() {
 
   const remove = useCallback(async (row: SaleReturnRow) => {
     const result = await confirm({ title: "Delete Return?", text: `Are you sure you want to delete all returns under Return No: ${row.return_no}? The returned qty goes out of stock again.` });
-    if (!result.isConfirmed) return;
+    if (!result.isConfirmed) {
+      return;
+    }
     try {
       await saleReturnService.deleteReturn(row.sale_return_id);
       toast.success(`${row.return_no} deleted`);
       load();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || "Failed to delete return");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Failed to delete return"));
     }
   }, [confirm, load]);
 
   const columns = useMemo((): ColumnDef<SaleReturnRow>[] => {
-    const byReturn = (row: SaleReturnRow) => row.sale_return_id;
-    const money = (value: string | number) => <span className="block text-right">{formatMoney(value)}</span>;
+    // the return columns are merged over the item rows of one return
+    function byReturn(row: SaleReturnRow) {
+      return row.sale_return_id;
+    }
+
+    function money(value: string | number) {
+      return <span className="block text-right">{formatMoney(value)}</span>;
+    }
     return [
       {
         id: "return_no",

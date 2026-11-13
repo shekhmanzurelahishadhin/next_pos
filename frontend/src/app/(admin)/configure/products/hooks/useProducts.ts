@@ -1,13 +1,14 @@
-// hooks/useProducts.ts
-import { formatDate } from '@/lib/format';
-import { useState, useCallback, useEffect } from 'react';
-import { toast } from 'react-toastify';
-import { productService, Product, ProductFormData, ProductFilters, PaginatedResponse } from '@/services/productService';
-import { lookupService } from '@/services/lookupService';
-import { useAlert } from '@/hooks/useAlert';
-import { useModal } from '@/hooks/useModal';
-import { useDebounce } from '@/hooks/useDebounce';
-import { api } from '@/lib/api';
+// Product Setup: the product list, its filters, the modal and the dropdown lists of the form
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "react-toastify";
+import { useAlert } from "@/hooks/useAlert";
+import { useModal } from "@/hooks/useModal";
+import { useDebounce } from "@/hooks/useDebounce";
+import { api } from "@/lib/api";
+import { formatDate } from "@/lib/format";
+import { apiErrorMessage, apiFieldErrors } from "@/lib/options";
+import { productService, Product, ProductFormData } from "@/services/productService";
+import { lookupService } from "@/services/lookupService";
 
 export interface Option {
   value: number;
@@ -40,16 +41,21 @@ const emptyOptions: ProductOptions = {
   sizes: [],
 };
 
-// Turn API rows into { value, label } for selects
-const toOptions = (rows: any[]): Option[] =>
-  rows.map((row) => ({ value: Number(row.id), label: row.name, category_id: Number(row.category_id) }));
+// API rows as { value, label } for the selects (category_id is used to filter the sub categories)
+function toOptions(rows: { id: number | string; name: string; category_id?: number | string }[]): Option[] {
+  const options: Option[] = [];
+  for (const row of rows) {
+    options.push({ value: Number(row.id), label: row.name, category_id: Number(row.category_id) });
+  }
+  return options;
+}
 
 export const useProducts = () => {
   const { confirm } = useAlert();
   const { isOpen, openModal, closeModal } = useModal();
 
-  // Data state
   const [products, setProducts] = useState<Product[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ value: number; label: string }[]>([]);
@@ -57,66 +63,42 @@ export const useProducts = () => {
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [models, setModels] = useState<string[]>([]);
 
-  // Modal state
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [mode, setMode] = useState<'view' | 'edit' | 'create'>('create');
+  const [mode, setMode] = useState<"view" | "edit" | "create">("create");
   const [backendErrors, setBackendErrors] = useState<Record<string, string>>({});
 
-  // Filter and pagination state
   const [filters, setFilters] = useState<Record<string, string | number>>({});
   const debouncedFilters = useDebounce(filters, 300);
-  const [pagination, setPagination] = useState({
-    pageIndex: 0,
-    pageSize: 10,
-  });
-  const [total, setTotal] = useState(0);
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
-  // Load products
   const loadProducts = useCallback(async () => {
     try {
       setLoading(true);
-      const apiFilters: ProductFilters = {
-        page: pagination.pageIndex + 1,
-        per_page: pagination.pageSize,
-        ...debouncedFilters,
-      };
-
-      const response: PaginatedResponse<Product> = await productService.getProducts(apiFilters);
+      const response = await productService.getProducts({ ...debouncedFilters, page: pagination.pageIndex + 1, per_page: pagination.pageSize });
       setProducts(response.data);
       setTotal(response.total);
-    } catch (err) {
-      toast.error('Failed to load products');
-      console.error('Error loading products:', err);
+    } catch {
+      toast.error("Failed to load products");
     } finally {
       setLoading(false);
     }
   }, [pagination.pageIndex, pagination.pageSize, debouncedFilters]);
 
-  const fetchLookups = async () => {
-    try {
-      const res = await lookupService.getLookupByType("active_status");
-      setStatus(res);
-    } catch (error) {
-      console.error("Failed to fetch lookups", error);
-    }
-  };
-
-  // Load all dropdown lists for the form (active rows only)
-  const fetchOptions = async () => {
+  // all dropdown lists of the form (active rows only), loaded at the same time
+  const loadOptions = useCallback(async () => {
     setLoadingOptions(true);
     try {
       const params = { status: 1 };
-      const lookup = (type: string) => api.get("/configure/lookups", { params: { ...params, type } });
       const [categories, subCategories, brands, units, vehicleBrands, countries, manufacturers, colors, sizes] = await Promise.all([
-        api.get("/configure/categories", { params }),
-        api.get("/configure/sub-categories", { params }),
-        api.get("/configure/brands", { params }),
-        api.get("/configure/units", { params }),
-        lookup("vehicle_brand"),
-        lookup("country"),
-        lookup("manufacturer"),
-        lookup("color"),
-        lookup("size"),
+        api.get("/configure/categories", { params: params }),
+        api.get("/configure/sub-categories", { params: params }),
+        api.get("/configure/brands", { params: params }),
+        api.get("/configure/units", { params: params }),
+        api.get("/configure/lookups", { params: { status: 1, type: "vehicle_brand" } }),
+        api.get("/configure/lookups", { params: { status: 1, type: "country" } }),
+        api.get("/configure/lookups", { params: { status: 1, type: "manufacturer" } }),
+        api.get("/configure/lookups", { params: { status: 1, type: "color" } }),
+        api.get("/configure/lookups", { params: { status: 1, type: "size" } }),
       ]);
 
       setOptions({
@@ -132,96 +114,116 @@ export const useProducts = () => {
       });
     } catch (error) {
       console.error("Failed to fetch product options", error);
-      toast.error('Failed to load form options');
+      toast.error("Failed to load form options");
     } finally {
       setLoadingOptions(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadProducts();
   }, [loadProducts]);
 
-  // for active status lookup, and the lists used by the table filters
+  // the status, the form lists (also used by the table filters) and the model names, loaded once
   useEffect(() => {
-    fetchLookups();
-    fetchOptions();
-    api.get("/configure/products/model-list")
-      .then((res) => setModels(res.data.data))
-      .catch((error) => console.error("Failed to fetch model list", error));
-  }, []);
+    async function loadStatus() {
+      try {
+        setStatus(await lookupService.getLookupByType("active_status"));
+      } catch (error) {
+        console.error("Failed to fetch lookups", error);
+      }
+    }
 
-  // Modal operations
+    async function loadModels() {
+      try {
+        const response = await api.get("/configure/products/model-list");
+        setModels(response.data.data);
+      } catch (error) {
+        console.error("Failed to fetch model list", error);
+      }
+    }
+
+    loadStatus();
+    loadOptions();
+    loadModels();
+  }, [loadOptions]);
+
   const handleView = useCallback((product: Product) => {
     setSelectedProduct(product);
-    setMode('view');
+    setMode("view");
     setBackendErrors({});
     openModal();
   }, [openModal]);
 
   const handleEdit = useCallback((product: Product) => {
     setSelectedProduct(product);
-    setMode('edit');
+    setMode("edit");
     setBackendErrors({});
-    fetchOptions();
+    loadOptions();
     openModal();
-  }, [openModal]);
+  }, [openModal, loadOptions]);
 
   const handleCreate = useCallback(() => {
     setSelectedProduct(null);
-    setMode('create');
+    setMode("create");
     setBackendErrors({});
-    fetchOptions();
+    loadOptions();
     openModal();
-  }, [openModal]);
+  }, [openModal, loadOptions]);
 
   const handleCloseModal = useCallback(() => {
     closeModal();
     setSelectedProduct(null);
-    setMode('create');
+    setMode("create");
     setBackendErrors({});
   }, [closeModal]);
 
-  // CRUD operations
+  // move to trash
   const handleSoftDelete = useCallback(async (id: number) => {
     const result = await confirm({
-      title: 'Move to Trash?',
-      text: 'Are you sure you want to move this Product to trash?',
+      title: "Move to Trash?",
+      text: "Are you sure you want to move this Product to trash?",
     });
-    if (!result.isConfirmed) return;
+    if (!result.isConfirmed) {
+      return;
+    }
 
     try {
       await productService.softDeleteProduct(id);
-      toast.success('Product moved to trash!');
+      toast.success("Product moved to trash!");
       await loadProducts();
-    } catch (err) {
-      toast.error('Failed to delete Product');
+    } catch {
+      toast.error("Failed to delete Product");
     }
   }, [confirm, loadProducts]);
 
+  // delete for ever (only a product in the trash)
   const handleForceDelete = useCallback(async (id: number) => {
     const result = await confirm({
-      title: 'Delete Product?',
-      text: 'Are you sure you want to delete this Product permanently? This action cannot be undone.',
+      title: "Delete Product?",
+      text: "Are you sure you want to delete this Product permanently? This action cannot be undone.",
     });
-    if (!result.isConfirmed) return;
+    if (!result.isConfirmed) {
+      return;
+    }
 
     try {
       await productService.forceDeleteProduct(id);
-      toast.success('Product deleted successfully!');
+      toast.success("Product deleted successfully!");
       await loadProducts();
-    } catch (err) {
-      toast.error('Failed to delete Product');
+    } catch {
+      toast.error("Failed to delete Product");
     }
   }, [confirm, loadProducts]);
 
+  // take back from trash
   const handleRestore = useCallback(async (id: number) => {
     try {
       await productService.restoreProduct(id);
-      toast.success('Product restored successfully!');
+      toast.success("Product restored successfully!");
       await loadProducts();
-    } catch (err) {
-      toast.error('Failed to restore Product');
+    } catch {
+      toast.error("Failed to restore Product");
     }
   }, [loadProducts]);
 
@@ -230,27 +232,26 @@ export const useProducts = () => {
       setSaving(true);
       setBackendErrors({});
 
-      if (mode === 'edit' && selectedProduct) {
+      if (mode === "edit" && selectedProduct) {
         await productService.updateProduct(selectedProduct.id, productData);
-        toast.success('Product updated successfully!');
+        toast.success("Product updated successfully!");
       } else {
         await productService.createProduct(productData);
-        toast.success('Product created successfully!');
-        setPagination(prev => ({ ...prev, pageIndex: 0 }));
+        toast.success("Product created successfully!");
+        // a new product is on the first page
+        setPagination((oldPagination) => ({ ...oldPagination, pageIndex: 0 }));
       }
 
       handleCloseModal();
       await loadProducts();
       return true;
-    } catch (err: any) {
-      if (err?.response?.data?.errors) {
-        const errors: Record<string, string> = {};
-        Object.entries(err.response.data.errors).forEach(([field, messages]) => {
-          errors[field] = Array.isArray(messages) ? messages[0] : (messages as string);
-        });
-        setBackendErrors(errors);
+    } catch (err) {
+      // validation errors are shown under the fields, any other error as a message
+      const fieldErrors = apiFieldErrors(err);
+      if (Object.keys(fieldErrors).length > 0) {
+        setBackendErrors(fieldErrors);
       } else {
-        toast.error(err?.response?.data?.message || 'Failed to save Product');
+        toast.error(apiErrorMessage(err, "Failed to save Product"));
       }
       return false;
     } finally {
@@ -258,20 +259,18 @@ export const useProducts = () => {
     }
   }, [mode, selectedProduct, loadProducts, handleCloseModal]);
 
-  // Filter and search operations
   const handleFilterChange = useCallback((name: string, value: string | number) => {
-    setFilters((prev) => ({ ...prev, [name]: value }));
-    setPagination(prev => ({ ...prev, pageIndex: 0 }));
+    setFilters((oldFilters) => ({ ...oldFilters, [name]: value }));
+    setPagination((oldPagination) => ({ ...oldPagination, pageIndex: 0 }));
   }, []);
 
-  // Export all products (no pagination)
-  const exportAllProducts = async () => {
+  // all products for the export, without paging
+  async function exportAllProducts() {
     const response = await productService.getProducts({});
     return response.data;
-  };
+  }
 
   return {
-    // State
     products,
     loading,
     saving,
@@ -286,7 +285,6 @@ export const useProducts = () => {
     loadingOptions,
     models,
 
-    // Actions
     setPagination,
     handleView,
     handleEdit,

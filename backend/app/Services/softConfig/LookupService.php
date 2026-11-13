@@ -1,8 +1,6 @@
 <?php
 
-
 namespace App\Services\softConfig;
-
 
 use App\Models\softConfig\Lookup;
 use Carbon\Carbon;
@@ -10,6 +8,7 @@ use Illuminate\Support\Facades\Auth;
 
 class LookupService
 {
+    // Lookup list with the search filters; paginated when perPage is given
     public function getLookups(array $filters = [], $perPage = null)
     {
         $query = Lookup::query()->select(
@@ -24,113 +23,99 @@ class LookupService
             'deleted_at'
         );
 
-        // Handle status / trash logic
+        // status "trash" shows the deleted lookups, any other status filters by it
         if (($filters['status'] ?? '') === 'trash') {
             $query->onlyTrashed();
         } elseif (isset($filters['status']) && $filters['status'] !== '') {
             $query->where('status', $filters['status']);
         }
-//        else {
-//            $query->withTrashed();
-//        }
 
-        // Apply filters
-        $query
-            ->when($filters['name'] ?? null, fn($q, $name) =>
-            $q->where('name', 'like', "%{$name}%")
-            )
-            ->when($filters['type'] ?? null, fn($q, $type) =>
-            $q->where('type',  "{$type}")
-            )
-            ->when($filters['code'] ?? null, fn($q, $code) =>
-            $q->where('code', 'like', "%{$code}%")
-            )
-            ->when($filters['created_by'] ?? null, fn($q, $createdBy) =>
-            $q->whereHas('createdBy', fn($sub) =>
-            $sub->where('name', 'like', "%{$createdBy}%")
-            )
-            )
-            ->when($filters['created_at'] ?? null, fn($q, $createdAt) =>
-            $q->whereDate('created_at', date('Y-m-d', strtotime($createdAt)))
-            );
+        if (!empty($filters['name'])) {
+            $query->where('name', 'like', '%' . $filters['name'] . '%');
+        }
+        if (!empty($filters['type'])) {
+            $query->where('type', $filters['type']);
+        }
+        if (!empty($filters['code'])) {
+            $query->where('code', 'like', '%' . $filters['code'] . '%');
+        }
+        if (!empty($filters['created_by'])) {
+            // search by the name of the user who made the lookup
+            $createdBy = $filters['created_by'];
+            $query->whereHas('createdBy', function ($user) use ($createdBy) {
+                $user->where('name', 'like', '%' . $createdBy . '%');
+            });
+        }
+        if (!empty($filters['created_at'])) {
+            $query->whereDate('created_at', date('Y-m-d', strtotime($filters['created_at'])));
+        }
 
-        // Eager load common relations
-        $query->with([
-            'createdBy:id,name',
-        ])->orderByDesc('id');
+        $query->with(['createdBy:id,name'])->orderByDesc('id');
 
-        // Return results
-        return $perPage ? $query->paginate($perPage) : $query->get();
+        if ($perPage) {
+            return $query->paginate($perPage);
+        }
+        return $query->get();
     }
 
-
+    // is_new = 1: a new type written by the user (its first code is 1),
+    // else a new name for a type that is already there (next code of that type)
     public function store($request)
     {
         try {
             if ($request->is_new == 1) {
-                if (Lookup::where('type', trim(str_replace(" ", "_", $request->type_write)))->exists()) {
+                $type = trim(str_replace(" ", "_", $request->type_write));
+                if (Lookup::where('type', $type)->exists()) {
                     return [
                         'success' => false,
                         'message' => 'Lookup Type Already Exist.',
                         'errors' => ['Lookup Type Already Exist.'],
                     ];
-                } else {
-                    $lookup = Lookup::insert([
-                        'name' => trim($request->name),
-                        'type' => trim(str_replace(" ", "_", $request->type_write)),
-                        'code' => 1,
-                        'created_by' => Auth::id(),
-                        'created_at' => Carbon::now(),
-                    ]);
-                    return [
-                        'success' => true,
-                        'message' => 'Lookup saved Successfully.',
-                        'data' => $lookup,
-                    ];
                 }
+                $code = 1;
+            } else {
+                $type = $request->type_select;
+                $code = Lookup::where('type', $type)->max('code') + 1;
             }
-            else {
 
-                $lookup = Lookup::insert([
-                    'name' => trim($request->name),
-                    'type' => $request->type_select,
-                    'code' => Lookup::where('type', $request->type_select)->max('code') + 1,
-                    'created_by' => Auth::id(),
-                    'created_at' => Carbon::now()
-                ]);
-                return [
-                    'success' => true,
-                    'message' => 'Lookup saved Successfully.',
-                    'data' => $lookup,
-                ];
-            }
-        }
-        catch (\Exception $e){
+            $lookup = Lookup::insert([
+                'name' => trim($request->name),
+                'type' => $type,
+                'code' => $code,
+                'created_by' => Auth::id(),
+                'created_at' => Carbon::now(),
+            ]);
+
+            return [
+                'success' => true,
+                'message' => 'Lookup saved Successfully.',
+                'data' => $lookup,
+            ];
+        } catch (\Exception $e) {
             return [
                 'success' => false,
                 'message' => 'Lookup not Updated.',
                 'error' => $e->getMessage(),
             ];
         }
-
     }
 
-    public function update($request,$lookup)
+    public function update($request, $lookup)
     {
-        try{
-            $lookup = $lookup->update([
+        try {
+            $updated = $lookup->update([
                 'name' => $request->name,
                 'status' => $request->status,
                 'updated_by' => Auth::id(),
                 'updated_at' => Carbon::now()
             ]);
+
             return [
                 'success' => true,
                 'message' => 'Lookup Updated Successfully.',
-                'data' => $lookup,
+                'data' => $updated,
             ];
-        }
-        catch (\Exception $e){
+        } catch (\Exception $e) {
             return [
                 'success' => false,
                 'message' => 'Lookup not Updated.',
@@ -152,11 +137,10 @@ class LookupService
         return $lookup;
     }
 
+    // only a lookup in the trash can be deleted for ever
     public function forceDeleteLookup(Lookup $lookup)
     {
         if ($lookup->trashed()) {
-            // delete logo from storage
-
             $lookup->forceDelete();
             return true;
         }

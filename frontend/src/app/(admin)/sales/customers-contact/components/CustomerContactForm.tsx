@@ -39,13 +39,15 @@ export function CustomerContactForm({ contact, mode, saving, onSubmit, backendEr
     defaultValues: emptyForm,
   });
 
-  // Handle backend errors
+  // the API validation errors are shown under their fields
   useEffect(() => {
-    if (backendErrors) {
-      clearErrors();
-      Object.entries(backendErrors).forEach(([field, message]) => {
-        setError(field as keyof CustomerContactFormData, { type: 'server', message });
-      });
+    if (!backendErrors) {
+      return;
+    }
+
+    clearErrors();
+    for (const field in backendErrors) {
+      setError(field as keyof CustomerContactFormData, { type: "server", message: backendErrors[field] });
     }
   }, [backendErrors, setError, clearErrors]);
 

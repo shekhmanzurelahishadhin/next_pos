@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
+import { apiErrorMessage } from "@/lib/options";
 import ComponentCard from "@/components/common/ComponentCard";
 import Button from "@/components/ui/button/Button";
 import Input from "@/components/form/input/InputField";
@@ -22,40 +23,66 @@ export function ScrollCodeCard({ type, title, desc, items, maxLength, canEdit, o
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
+  // the saved codes go into the inputs (again after each save)
   useEffect(() => {
-    setValues(Object.fromEntries(items.map((item) => [item.key, item.code])));
+    const savedValues: Record<string, string> = {};
+    for (const item of items) {
+      savedValues[item.key] = item.code;
+    }
+    setValues(savedValues);
     setErrors({});
   }, [items]);
 
-  const validate = () => {
+  // every code is needed, letters and numbers only, and one code only once
+  function validate() {
     const found: Record<string, string> = {};
-    const used: Record<string, string> = {};
-    items.forEach(({ key }) => {
-      const code = (values[key] ?? "").trim().toUpperCase();
-      if (!code) found[key] = "Required";
-      else if (!/^[A-Z0-9]+$/.test(code)) found[key] = "Letters and numbers only";
-      else if (used[code]) found[key] = found[used[code]] = "Used twice";
-      used[code] = key;
-    });
+    const usedBy: Record<string, string> = {}; // code => key that has it
+    for (const item of items) {
+      const code = (values[item.key] ?? "").trim().toUpperCase();
+      if (!code) {
+        found[item.key] = "Required";
+      } else if (!/^[A-Z0-9]+$/.test(code)) {
+        found[item.key] = "Letters and numbers only";
+      } else if (usedBy[code]) {
+        // both items with the same code get the message
+        found[item.key] = "Used twice";
+        found[usedBy[code]] = "Used twice";
+      }
+      usedBy[code] = item.key;
+    }
     setErrors(found);
     return Object.keys(found).length === 0;
-  };
+  }
 
-  const handleSave = async () => {
-    if (!validate()) return;
+  async function handleSave() {
+    if (!validate()) {
+      return;
+    }
     try {
       setSaving(true);
       onSaved(await scrollCodeService.saveCodes(type, values));
-      toast.success(`${title} saved successfully!`);
-    } catch (err: any) {
-      const backend = err?.response?.data?.errors ?? {};
-      // backend sends "codes.<key>"
-      setErrors(Object.fromEntries(Object.entries(backend).map(([field, msg]) => [field.replace("codes.", ""), (msg as string[])[0]])));
-      if (!Object.keys(backend).length) toast.error(err?.response?.data?.message || `Failed to save ${title}`);
+      toast.success(title + " saved successfully!");
+    } catch (err) {
+      // the server sends the errors as "codes.<key>"
+      const error = err as { response?: { data?: { errors?: Record<string, string[]> } } };
+      const serverErrors = error.response?.data?.errors ?? {};
+      const found: Record<string, string> = {};
+      for (const field in serverErrors) {
+        found[field.replace("codes.", "")] = serverErrors[field][0];
+      }
+      setErrors(found);
+      if (Object.keys(serverErrors).length === 0) {
+        toast.error(apiErrorMessage(err, "Failed to save " + title));
+      }
     } finally {
       setSaving(false);
     }
-  };
+  }
+
+  // codes are kept in capitals and not longer than allowed
+  function changeCode(key: string, value: string) {
+    setValues((oldValues) => ({ ...oldValues, [key]: value.toUpperCase().slice(0, maxLength) }));
+  }
 
   return (
     <ComponentCard title={title} desc={desc}>
@@ -66,7 +93,7 @@ export function ScrollCodeCard({ type, title, desc, items, maxLength, canEdit, o
             <div className="flex-1">
               <Input
                 value={values[item.key] ?? ""}
-                onChange={(e) => setValues((prev) => ({ ...prev, [item.key]: e.target.value.toUpperCase().slice(0, maxLength) }))}
+                onChange={(e) => changeCode(item.key, e.target.value)}
                 error={errors[item.key]}
                 disabled={!canEdit || saving}
                 placeholder="Code"

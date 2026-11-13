@@ -26,21 +26,19 @@ export function CustomerContactModal({
   backendErrors,
   formatDate,
 }: CustomerContactModalProps) {
-  const getTitle = () => {
-    switch (mode) {
-      case 'view': return 'Contact Details';
-      case 'edit': return 'Edit Contact';
-      case 'create': return 'Add New Contact';
-      default: return 'Contact';
-    }
-  };
+  let title = "Add New Contact";
+  if (mode === "view") {
+    title = "Contact Details";
+  } else if (mode === "edit") {
+    title = "Edit Contact";
+  }
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       className={mode === 'view' ? 'max-w-md' : 'max-w-2xl'}
-      title={getTitle()}
+      title={title}
       footer={
       <>
         {mode === 'view' ? (

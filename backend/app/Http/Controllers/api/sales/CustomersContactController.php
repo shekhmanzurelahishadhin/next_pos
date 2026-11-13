@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers\api\sales;
 
 use App\Helpers\ApiResponse;
@@ -9,7 +10,9 @@ use App\Models\softConfig\CustomersContact;
 use App\Services\sales\CustomersContactService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 
+// Customer phone book
 class CustomersContactController extends Controller
 {
     public function __construct()
@@ -23,28 +26,30 @@ class CustomersContactController extends Controller
     public function index(Request $request, CustomersContactService $contactService)
     {
         try {
-            $perPage = $request->get('per_page');
             $filters = $request->only('status', 'district', 'customer_name', 'contact', 'remarks');
-            $contacts = $contactService->getContacts($filters, $perPage);
+            $contacts = $contactService->getContacts($filters, $request->get('per_page'));
 
-            if ($contacts instanceof \Illuminate\Pagination\LengthAwarePaginator) {
+            if ($contacts instanceof LengthAwarePaginator) {
+                // one page of contacts
                 $data = [
-                    'data' => CustomersContactResource::collection($contacts->items()),
-                    'total' => $contacts->total(),
+                    'data'         => CustomersContactResource::collection($contacts->items()),
+                    'total'        => $contacts->total(),
                     'current_page' => $contacts->currentPage(),
-                    'per_page' => $contacts->perPage(),
+                    'per_page'     => $contacts->perPage(),
                 ];
             } else {
+                // every contact (no per_page given)
                 $data = [
-                    'data' => CustomersContactResource::collection($contacts),
-                    'total' => $contacts->count(),
+                    'data'         => CustomersContactResource::collection($contacts),
+                    'total'        => $contacts->count(),
                     'current_page' => 1,
-                    'per_page' => $contacts->count(),
+                    'per_page'     => $contacts->count(),
                 ];
             }
 
             return ApiResponse::success($data, 'Customer contacts retrieved successfully');
         } catch (\Exception $e) {
+            report($e);
             return ApiResponse::serverError('Failed to retrieve customer contacts');
         }
     }
@@ -55,6 +60,7 @@ class CustomersContactController extends Controller
             $contact = $contactService->createContact($request->validated());
             return ApiResponse::success(new CustomersContactResource($contact), 'Customer contact created successfully', 201);
         } catch (\Exception $e) {
+            report($e);
             return ApiResponse::serverError('Failed to create customer contact');
         }
     }
@@ -78,11 +84,12 @@ class CustomersContactController extends Controller
         } catch (ModelNotFoundException $e) {
             return ApiResponse::notFound('Customer contact not found');
         } catch (\Exception $e) {
+            report($e);
             return ApiResponse::serverError('Failed to update customer contact');
         }
     }
 
-    // Soft delete (move to trash)
+    // move to trash (soft delete)
     public function trash($id, CustomersContactService $contactService)
     {
         try {
@@ -94,6 +101,7 @@ class CustomersContactController extends Controller
         }
     }
 
+    // take back from trash
     public function restore($id, CustomersContactService $contactService)
     {
         try {
@@ -105,15 +113,16 @@ class CustomersContactController extends Controller
         }
     }
 
-    // Force delete permanently
+    // delete for ever (only a contact in the trash)
     public function destroy($id, CustomersContactService $contactService)
     {
         $contact = CustomersContact::withTrashed()->findOrFail($id);
+        $deleted = $contactService->forceDeleteContact($contact);
 
-        if ($contactService->forceDeleteContact($contact)) {
-            return response()->json(['message' => 'Customer contact permanently deleted']);
+        if (!$deleted) {
+            return response()->json(['message' => 'Customer contact is not in trash'], 400);
         }
 
-        return response()->json(['message' => 'Customer contact is not in trash'], 400);
+        return response()->json(['message' => 'Customer contact permanently deleted']);
     }
 }

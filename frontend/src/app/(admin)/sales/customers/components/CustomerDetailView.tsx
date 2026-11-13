@@ -9,7 +9,22 @@ interface CustomerDetailViewProps {
   formatDate: (dateString?: string) => string;
 }
 
+// opening balance type 1 = debit (they owe us), 2 = credit (we owe them)
+function balanceTypeName(type: number) {
+  if (type == 1) {
+    return "Debit";
+  }
+  if (type == 2) {
+    return "Credit";
+  }
+  return "Unknown";
+}
+
 export function CustomerDetailView({ customer, formatDate }: CustomerDetailViewProps) {
+  let creditLimit = "No limit";
+  if (Number(customer.credit_limit ?? 0) > 0) {
+    creditLimit = formatMoney(customer.credit_limit);
+  }
 
   return (
     <DetailGrid>
@@ -22,12 +37,8 @@ export function CustomerDetailView({ customer, formatDate }: CustomerDetailViewP
       <DetailRow label="Car Name" value={customer.car_name || "-"} />
       <DetailRow label="Fax" value={customer.fax || "-"} />
       <DetailRow label="Website" value={customer.website || "-"} />
-      <DetailRow label="Credit Limit" value={Number(customer.credit_limit ?? 0) > 0 ? formatMoney(customer.credit_limit) : "No limit"} />
-      <DetailRow label="Balance Type" value={customer.opening_balance_type == 1
-                  ? "Debit"
-                  : customer.opening_balance_type == 2
-                    ? "Credit"
-                    : "Unknown" } />
+      <DetailRow label="Credit Limit" value={creditLimit} />
+      <DetailRow label="Balance Type" value={balanceTypeName(customer.opening_balance_type)} />
       <DetailRow label="Opening Balance" value={formatMoney(customer.opening_balance)} />
       <DetailRow label="Status" value={<StatusBadge status={Number(customer.status)} trashed={!!customer.deleted_at} />} />
       <DetailRow label="Created At" value={formatDate(customer.created_at)} />

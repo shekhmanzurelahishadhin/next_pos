@@ -174,7 +174,12 @@ export const useCustomerColumns = ({
       },
       cell: ({ row }) => {
         const openingBalanceType = row.getValue("opening_balance_type") as number;
-        const typeLabel = openingBalanceType === 1 ? "Debit" : openingBalanceType === 2 ? "Credit" : "N/A";
+        let typeLabel = "N/A";
+        if (openingBalanceType === 1) {
+          typeLabel = "Debit";
+        } else if (openingBalanceType === 2) {
+          typeLabel = "Credit";
+        }
         return (
           <div className="px-2 text-center">
               {typeLabel}
@@ -333,5 +338,5 @@ export const useCustomerColumns = ({
         );
       },
     },
-  ], [hasPermission, onView, onEdit, handleSoftDelete, handleForceDelete, handleRestore, pageIndex, pageSize, status, openingBalanceType]);
+  ], [hasPermission, onView, onEdit, handleSoftDelete, handleForceDelete, handleRestore, pageIndex, pageSize, status, openingBalanceType, formatDate]);
 };

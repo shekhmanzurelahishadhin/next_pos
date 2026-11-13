@@ -22,9 +22,9 @@ export const useProductPriceList = () => {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await productPriceService.getRows({ ...debouncedFilters, page: pagination.pageIndex + 1, per_page: pagination.pageSize });
-      setRows(res.data);
-      setTotal(res.total);
+      const response = await productPriceService.getRows({ ...debouncedFilters, page: pagination.pageIndex + 1, per_page: pagination.pageSize });
+      setRows(response.data);
+      setTotal(response.total);
     } catch {
       toast.error("Failed to load products");
     } finally {
@@ -36,24 +36,38 @@ export const useProductPriceList = () => {
     load();
   }, [load]);
 
-  // filter lists; same sub category name is under many categories, so show "Engine (G)"
+  // filter lists; the same sub category name is under many categories, so show "Engine (G)"
   useEffect(() => {
-    Promise.all([
-      api.get("/configure/categories", { params: { status: 1 } }),
-      api.get("/configure/sub-categories", { params: { status: 1 } }),
-    ]).then(([cats, subs]) => {
-      const catList = cats.data.data.data.map((c: any) => ({ value: String(c.id), label: c.name }));
-      setCategories(catList);
-      setSubCategories(subs.data.data.data.map((s: any) => ({
-        value: String(s.id),
-        label: `${s.name} (${catList.find((c: Option) => c.value === String(s.category_id))?.label ?? "-"})`,
-      })));
-    }).catch(() => {});
+    async function loadFilterLists() {
+      try {
+        const categoryResponse = await api.get("/configure/categories", { params: { status: 1 } });
+        const subCategoryResponse = await api.get("/configure/sub-categories", { params: { status: 1 } });
+
+        const categoryList: Option[] = [];
+        const categoryNames: Record<string, string> = {};
+        for (const category of categoryResponse.data.data.data) {
+          categoryList.push({ value: String(category.id), label: category.name });
+          categoryNames[String(category.id)] = category.name;
+        }
+
+        const subCategoryList: Option[] = [];
+        for (const subCategory of subCategoryResponse.data.data.data) {
+          const categoryName = categoryNames[String(subCategory.category_id)] ?? "-";
+          subCategoryList.push({ value: String(subCategory.id), label: subCategory.name + " (" + categoryName + ")" });
+        }
+
+        setCategories(categoryList);
+        setSubCategories(subCategoryList);
+      } catch {
+        // the filters just stay empty
+      }
+    }
+    loadFilterLists();
   }, []);
 
   const handleFilterChange = useCallback((name: string, value: string | number) => {
-    setFilters((prev) => ({ ...prev, [name]: value }));
-    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+    setFilters((oldFilters) => ({ ...oldFilters, [name]: value }));
+    setPagination((oldPagination) => ({ ...oldPagination, pageIndex: 0 }));
   }, []);
 
   return { rows, total, loading, pagination, setPagination, handleFilterChange, reload: load, categories, subCategories };

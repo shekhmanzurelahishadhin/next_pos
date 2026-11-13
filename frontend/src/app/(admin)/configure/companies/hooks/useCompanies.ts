@@ -1,97 +1,78 @@
-// hooks/useCompanies.ts
-import { formatDate } from '@/lib/format';
-import { useState, useCallback, useEffect } from 'react';
-import { toast } from 'react-toastify';
-import { companyService, Company, CompanyFilters, PaginatedResponse } from '@/services/companyService';
-import { lookupService } from '@/services/lookupService';
-import { useAlert } from '@/hooks/useAlert';
-import { useModal } from '@/hooks/useModal';
-import { useDebounce } from '@/hooks/useDebounce';
+// Company Setup: the company list, its filters and the modal
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "react-toastify";
+import { useAlert } from "@/hooks/useAlert";
+import { useModal } from "@/hooks/useModal";
+import { useDebounce } from "@/hooks/useDebounce";
+import { formatDate } from "@/lib/format";
+import { apiErrorMessage, apiFieldErrors } from "@/lib/options";
+import { companyService, Company } from "@/services/companyService";
+import { lookupService } from "@/services/lookupService";
+
 export const useCompanies = () => {
   const { confirm } = useAlert();
   const { isOpen, openModal, closeModal } = useModal();
 
-  // Data state
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ value: number; label: string }[]>([]);
 
-  // Modal state
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
-  const [mode, setMode] = useState<'view' | 'edit' | 'create'>('create');
+  const [mode, setMode] = useState<"view" | "edit" | "create">("create");
   const [backendErrors, setBackendErrors] = useState<Record<string, string>>({});
 
-  // Filter and pagination state
   const [filters, setFilters] = useState<Record<string, string | number>>({});
   const debouncedFilters = useDebounce(filters, 300);
-  const [pagination, setPagination] = useState({
-    pageIndex: 0,
-    pageSize: 10,
-  });
-  const [total, setTotal] = useState(0);
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
-
-  // Load companies
   const loadCompanies = useCallback(async () => {
     try {
       setLoading(true);
-      const apiFilters: CompanyFilters = {
-        page: pagination.pageIndex + 1,
-        per_page: pagination.pageSize,
-        ...debouncedFilters,
-      };
-
-      const response: PaginatedResponse<Company> = await companyService.getCompanies(apiFilters);
+      const response = await companyService.getCompanies({ ...debouncedFilters, page: pagination.pageIndex + 1, per_page: pagination.pageSize });
       setCompanies(response.data);
       setTotal(response.total);
-    } catch (err) {
-      toast.error('Failed to load companies');
-      console.error('Error loading companies:', err);
+    } catch {
+      toast.error("Failed to load companies");
     } finally {
       setLoading(false);
     }
   }, [pagination.pageIndex, pagination.pageSize, debouncedFilters]);
 
-  const fetchLookups = async () => {
-    try {
-      const type = "active_status";
-      const res = await lookupService.getLookupByType(type);
-      console.log("Lookups fetched:", res);
-      setStatus(res);
-    } catch (error) {
-      console.error("Failed to fetch lookups", error);
-    }
-  };
-
   useEffect(() => {
     loadCompanies();
   }, [loadCompanies]);
 
-  // for active status lookup
+  // the status dropdown is loaded once
   useEffect(() => {
-    fetchLookups();
+    async function loadStatus() {
+      try {
+        setStatus(await lookupService.getLookupByType("active_status"));
+      } catch (error) {
+        console.error("Failed to fetch lookups", error);
+      }
+    }
+    loadStatus();
   }, []);
 
-
-  // Modal operations
   const handleView = useCallback((company: Company) => {
     setSelectedCompany(company);
-    setMode('view');
+    setMode("view");
     setBackendErrors({});
     openModal();
   }, [openModal]);
 
   const handleEdit = useCallback((company: Company) => {
     setSelectedCompany(company);
-    setMode('edit');
+    setMode("edit");
     setBackendErrors({});
     openModal();
   }, [openModal]);
 
   const handleCreate = useCallback(() => {
     setSelectedCompany(null);
-    setMode('create');
+    setMode("create");
     setBackendErrors({});
     openModal();
   }, [openModal]);
@@ -99,105 +80,94 @@ export const useCompanies = () => {
   const handleCloseModal = useCallback(() => {
     closeModal();
     setSelectedCompany(null);
-    setMode('create');
+    setMode("create");
     setBackendErrors({});
   }, [closeModal]);
 
-  // CRUD operations
+  // move to trash
   const handleSoftDelete = useCallback(async (id: number) => {
     const result = await confirm({
-      title: 'Move to Trash?',
-      text: 'Are you sure you want to move this company to trash? This action cannot be undone.',
+      title: "Move to Trash?",
+      text: "Are you sure you want to move this company to trash? This action cannot be undone.",
     });
-
-    if (!result.isConfirmed) return;
-    let previousCompanies: Company[] = [];
-    try {
-      // Optimistic update
-      previousCompanies = [...companies];
-      setCompanies(prev => prev.filter(company => company.id !== id));
-
-      await companyService.softDeleteCompany(id);
-      toast.success('Company moved to trashed!');
-      await loadCompanies();
-    } catch (err) {
-      // Revert on error
-      setCompanies(previousCompanies);
-      toast.error('Failed to delete company');
+    if (!result.isConfirmed) {
+      return;
     }
-  }, [confirm, companies, loadCompanies]);
 
+    try {
+      await companyService.softDeleteCompany(id);
+      toast.success("Company moved to trashed!");
+      await loadCompanies();
+    } catch {
+      toast.error("Failed to delete company");
+    }
+  }, [confirm, loadCompanies]);
+
+  // delete for ever (only a company in the trash)
   const handleForceDelete = useCallback(async (id: number) => {
     const result = await confirm({
-      title: 'Delete Company?',
-      text: 'Are you sure you want to delete this company? This action cannot be undone.',
+      title: "Delete Company?",
+      text: "Are you sure you want to delete this company? This action cannot be undone.",
     });
-
-    if (!result.isConfirmed) return;
-
-    let previousCompanies: Company[] = [];
-    try {
-      // Optimistic update
-      previousCompanies = [...companies];
-      setCompanies(prev => prev.filter(company => company.id !== id));
-
-      await companyService.forceDeleteCompany(id);
-      toast.success('Company deleted successfully!');
-      await loadCompanies();
-    } catch (err) {
-      // Revert on error
-      setCompanies(previousCompanies);
-      toast.error('Failed to delete company');
+    if (!result.isConfirmed) {
+      return;
     }
-  }, [confirm, companies, loadCompanies]);
 
+    try {
+      await companyService.forceDeleteCompany(id);
+      toast.success("Company deleted successfully!");
+      await loadCompanies();
+    } catch {
+      toast.error("Failed to delete company");
+    }
+  }, [confirm, loadCompanies]);
+
+  // take back from trash
   const handleRestore = useCallback(async (id: number) => {
     try {
       await companyService.restoreCompany(id);
-      toast.success('Company restored successfully!');
+      toast.success("Company restored successfully!");
       await loadCompanies();
-    } catch (err) {
-      // Revert on error
-      toast.error('Failed to restore company');
+    } catch {
+      toast.error("Failed to restore company");
     }
-  }, [companies, loadCompanies]);
+  }, [loadCompanies]);
 
-  const handleSave = useCallback(async (companyData: { 
-    name: string, 
-    code: string, 
-    phone: string, 
-    address: string, 
+  const handleSave = useCallback(async (companyData: {
+    name: string,
+    code: string,
+    phone: string,
+    address: string,
     logo: string,
-    default_currency: string, 
+    default_currency: string,
     timezone: string,
-    email: string, 
-    status: string 
+    email: string,
+    status: string
   }) => {
     try {
       setSaving(true);
       setBackendErrors({});
 
-      if (mode === 'edit' && selectedCompany) {
+      if (mode === "edit" && selectedCompany) {
         await companyService.updateCompany(selectedCompany.id, companyData);
-        toast.success('Company updated successfully!');
+        toast.success("Company updated successfully!");
       } else {
         await companyService.createCompany(companyData);
-        toast.success('Company created successfully!');
-        setPagination(prev => ({ ...prev, pageIndex: 0 }));
+        toast.success("Company created successfully!");
+        // a new company is on the first page
+        setPagination((oldPagination) => ({ ...oldPagination, pageIndex: 0 }));
       }
 
       handleCloseModal();
       await loadCompanies();
       return true;
-    } catch (err: any) {
-      if (err?.response?.data?.errors) {
-        const errors: Record<string, string> = {};
-        Object.entries(err.response.data.errors).forEach(([field, messages]) => {
-          errors[field] = Array.isArray(messages) ? messages[0] : messages;
-        });
-        setBackendErrors(errors);
+    } catch (err) {
+      // validation errors are shown under the fields, any other error as a message
+      const fieldErrors = apiFieldErrors(err);
+      if (Object.keys(fieldErrors).length > 0) {
+        setBackendErrors(fieldErrors);
       } else {
-        toast.error(err?.response?.data?.message || 'Failed to save company');
+        toast.error(apiErrorMessage(err, "Failed to save company"));
       }
       return false;
     } finally {
@@ -205,36 +175,18 @@ export const useCompanies = () => {
     }
   }, [mode, selectedCompany, loadCompanies, handleCloseModal]);
 
-  // Filter and search operations
   const handleFilterChange = useCallback((name: string, value: string | number) => {
-    setFilters((prev) => ({ ...prev, [name]: value }));
-    setPagination(prev => ({ ...prev, pageIndex: 0 }));
+    setFilters((oldFilters) => ({ ...oldFilters, [name]: value }));
+    setPagination((oldPagination) => ({ ...oldPagination, pageIndex: 0 }));
   }, []);
 
-
-  // Utility functions
-  const clearBackendErrors = useCallback(() => {
-    setBackendErrors({});
-  }, []);
-
-  const resetToFirstPage = useCallback(() => {
-    setPagination(prev => ({ ...prev, pageIndex: 0 }));
-  }, []);
-
-  // Function to export all companies
-  const exportAllCompanies = async () => {
-    try {
-      // Call API without pagination to get all data
-      const response = await companyService.getCompanies({});
-      return response.data;
-    } catch (error) {
-      console.error('Error exporting all companies:', error);
-      throw error;
-    }
-  };
+  // all companies for the export, without paging
+  async function exportAllCompanies() {
+    const response = await companyService.getCompanies({});
+    return response.data;
+  }
 
   return {
-    // State
     companies,
     loading,
     saving,
@@ -246,7 +198,6 @@ export const useCompanies = () => {
     total,
     status,
 
-    // Actions
     setPagination,
     handleView,
     handleEdit,
@@ -257,9 +208,6 @@ export const useCompanies = () => {
     handleRestore,
     handleSave,
     handleFilterChange,
-    clearBackendErrors,
-    resetToFirstPage,
-    loadCompanies,
     exportAllCompanies,
     formatDate,
   };

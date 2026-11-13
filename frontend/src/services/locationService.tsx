@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { pickFilters } from "@/lib/options";
 
 export interface Location {
   id: number;
@@ -42,17 +43,9 @@ export interface LocationFilters {
 
 class LocationService {
   async getLocations(filters: LocationFilters = {}): Promise<PaginatedResponse<Location>> {
-    const params = new URLSearchParams();
-
-    if (filters.search) params.append('search', filters.search);
-    if (filters.page) params.append('page', filters.page.toString());
-    if (filters.per_page) params.append('per_page', filters.per_page.toString());
-    if (filters.name) params.append('name', filters.name);
-    if (filters.code) params.append('code', filters.code);
-    if (filters.store_name) params.append('store_name', filters.store_name);
-    if (filters.status) params.append('status', filters.status);
-
-    const response = await api.get(`/configure/locations?${params}`);
+    // only these filters go to the API, and only when they have a value
+    const params = pickFilters(filters, ['search', 'page', 'per_page', 'name', 'code', 'store_name', 'status']);
+    const response = await api.get('/configure/locations', { params: params });
     return response.data.data;
   }
 

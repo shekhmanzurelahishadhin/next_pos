@@ -28,21 +28,28 @@ export function PpSpSetupModal({
   backendErrors,
   formatDate,
 }: PpSpSetupModalProps) {
-  const getTitle = () => {
-    switch (mode) {
-      case 'view': return 'PP/SP Setup Details';
-      case 'edit': return 'Edit PP/SP Setup';
-      case 'create': return 'Add New PP/SP Setup';
-      default: return 'PP/SP Setup';
-    }
-  };
+  let title = "Add New PP/SP Setup";
+  let modalSize = "max-w-2xl";
+  if (mode === "view") {
+    title = "PP/SP Setup Details";
+    modalSize = "max-w-lg";
+  } else if (mode === "edit") {
+    title = "Edit PP/SP Setup";
+  }
+
+  let submitText = "Create";
+  if (saving) {
+    submitText = "Saving...";
+  } else if (mode === "edit") {
+    submitText = "Update";
+  }
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      className={mode === 'view' ? 'max-w-lg' : 'max-w-2xl'}
-      title={getTitle()}
+      className={modalSize}
+      title={title}
       footer={
       <>
         {mode === 'view' ? (
@@ -55,7 +62,7 @@ export function PpSpSetupModal({
               Cancel
             </Button>
             <Button type="submit" form="pp-sp-setup-form" size="sm" disabled={saving}>
-              {saving ? 'Saving...' : (mode === 'edit' ? 'Update' : 'Create')}
+              {submitText}
             </Button>
           </>
         )}

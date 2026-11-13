@@ -40,9 +40,9 @@ export function CompanyForm({ status, company, mode, saving, onSubmit, backendEr
     mode: "onChange",
     defaultValues: {
       name: "",
-      email: "", 
-      phone: "", 
-      address: "", 
+      email: "",
+      phone: "",
+      address: "",
       status: 1,
     }
   });
@@ -50,16 +50,14 @@ export function CompanyForm({ status, company, mode, saving, onSubmit, backendEr
   // Watch the logo field to conditionally apply validation
   const logoFile = watch('logo');
 
-  // Handle backend errors
+  // show the errors the server sent under their fields
   useEffect(() => {
-    if (backendErrors) {
-      clearErrors();
-      Object.entries(backendErrors).forEach(([field, message]) => {
-        setError(field as keyof CompanyFormData, {
-          type: 'server',
-          message: Array.isArray(message) ? message[0] : message
-        });
-      });
+    if (!backendErrors) {
+      return;
+    }
+    clearErrors();
+    for (const field in backendErrors) {
+      setError(field as keyof CompanyFormData, { type: "server", message: backendErrors[field] });
     }
   }, [backendErrors, setError, clearErrors]);
 
@@ -67,17 +65,17 @@ export function CompanyForm({ status, company, mode, saving, onSubmit, backendEr
     if (mode === 'edit' && company) {
       reset({
         name: company?.name ?? '',
-        email: company?.email ?? '', 
-        phone: company?.phone ?? '', 
-        address: company?.address ?? '', 
+        email: company?.email ?? '',
+        phone: company?.phone ?? '',
+        address: company?.address ?? '',
         status: Number(company?.status ?? 1),
       });
     } else {
       reset({
         name: '',
-        email: '', 
-        phone: '', 
-        address: '', 
+        email: '',
+        phone: '',
+        address: '',
         status: 1,
       });
     }
@@ -85,26 +83,26 @@ export function CompanyForm({ status, company, mode, saving, onSubmit, backendEr
 
   const onFormSubmit = (data: CompanyFormData) => {
     const formData = new FormData();
-    
+
     // Append all form fields to FormData
     formData.append('name', data.name);
-    
+
     if (data.email) formData.append('email', data.email);
     if (data.phone) formData.append('phone', data.phone);
     if (data.address) formData.append('address', data.address);
     if (data.status !== undefined) formData.append('status', data.status.toString());
-    
+
     // Append file if it exists (only for create or if new file selected)
     if (data.logo instanceof File) {
       formData.append('logo', data.logo);
     }
-    
+
     // For update, if no file is selected but we have an existing company,
     // we might want to send a flag to keep the existing logo
     if (mode === 'edit') {
        formData.append("_method", "PUT");
     }
-    
+
     onSubmit(formData);
   };
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000/storage/';
@@ -196,7 +194,7 @@ export function CompanyForm({ status, company, mode, saving, onSubmit, backendEr
             )}
           />
         </div>
-        
+
         <div>
           <Label htmlFor="logo" required={mode === 'create'}>
             Upload file {mode === 'create' ? '' : '(Optional)'}
@@ -237,8 +235,8 @@ export function CompanyForm({ status, company, mode, saving, onSubmit, backendEr
                   <div className="mt-2">
                     <p className="text-sm text-gray-500 mb-1">Current logo:</p>
                     <div className="relative w-20 h-20 border rounded overflow-hidden">
-                      <img 
-                        src={baseUrl + company.logo} 
+                      <img
+                        src={baseUrl + company.logo}
                         alt={`${company.name} logo`}
                         className="w-full h-full object-cover"
                       />
@@ -250,8 +248,8 @@ export function CompanyForm({ status, company, mode, saving, onSubmit, backendEr
                   <div className="mt-2">
                     <p className="text-sm text-gray-500 mb-1">New logo preview:</p>
                     <div className="relative w-20 h-20 border rounded overflow-hidden">
-                      <img 
-                        src={URL.createObjectURL(logoFile)} 
+                      <img
+                        src={URL.createObjectURL(logoFile)}
                         alt="Preview"
                         className="w-full h-full object-cover"
                       />

@@ -1,17 +1,16 @@
 <?php
 
-
 namespace App\Services\softConfig;
 
-
 use App\Models\softConfig\Company;
-use App\Models\softConfig\Lookup;
 use App\Traits\FileUploader;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 
 class CompanyService
 {
     use FileUploader;
+
     const defaultColumns = [
         'id',
         'name',
@@ -29,81 +28,82 @@ class CompanyService
         'deleted_at',
         'updated_at'
     ];
+
+    // Company list with the search filters; paginated when perPage is given
     public function getCompanies(array $filters = [], $perPage = null, $columns = self::defaultColumns)
     {
         $query = Company::query()->select($columns);
-        // Restrict data if user is not superadmin and has a company_id
-        if (Auth::check() && !Auth::user()->hasRole('Super Admin') && !empty(Auth::user()->company_id)) {
-            $query->where('id', Auth::user()->company_id);
+
+        // a user of one company sees only that company (Super Admin sees all)
+        $companyId = $this->ownCompanyId();
+        if ($companyId) {
+            $query->where('id', $companyId);
         }
-        // Handle status / trash logic
+
+        // status "trash" shows the deleted companies, any other status filters by it
         if (($filters['status'] ?? '') === 'trash') {
             $query->onlyTrashed();
         } elseif (isset($filters['status']) && $filters['status'] !== '') {
             $query->where('status', $filters['status']);
         }
-//        else {
-//            $query->withTrashed();
-//        }
 
-        // Apply filters
-        $query
-            ->when($filters['name'] ?? null, fn($q, $name) =>
-            $q->where('name', 'like', "%{$name}%")
-            )
-            ->when($filters['email'] ?? null, fn($q, $email) =>
-            $q->where('email', 'like', "%{$email}%")
-            )
-            ->when($filters['address'] ?? null, fn($q, $address) =>
-            $q->where('address', 'like', "%{$address}%")
-            )
-            ->when($filters['code'] ?? null, fn($q, $code) =>
-            $q->where('code', 'like', "%{$code}%")
-            )
-            ->when($filters['created_by'] ?? null, fn($q, $createdBy) =>
-            $q->whereHas('createdBy', fn($sub) =>
-            $sub->where('name', 'like', "%{$createdBy}%")
-            )
-            )
-            ->when($filters['created_at'] ?? null, fn($q, $createdAt) =>
-            $q->whereDate('created_at', date('Y-m-d', strtotime($createdAt)))
-            );
+        if (!empty($filters['name'])) {
+            $query->where('name', 'like', '%' . $filters['name'] . '%');
+        }
+        if (!empty($filters['email'])) {
+            $query->where('email', 'like', '%' . $filters['email'] . '%');
+        }
+        if (!empty($filters['address'])) {
+            $query->where('address', 'like', '%' . $filters['address'] . '%');
+        }
+        if (!empty($filters['code'])) {
+            $query->where('code', 'like', '%' . $filters['code'] . '%');
+        }
+        if (!empty($filters['created_by'])) {
+            // search by the name of the user who made the company
+            $createdBy = $filters['created_by'];
+            $query->whereHas('createdBy', function ($user) use ($createdBy) {
+                $user->where('name', 'like', '%' . $createdBy . '%');
+            });
+        }
+        if (!empty($filters['created_at'])) {
+            $query->whereDate('created_at', date('Y-m-d', strtotime($filters['created_at'])));
+        }
 
-        // Eager load common relations
         $query->with([
             'createdBy:id,name',
             'locations:id,name,company_id',
             'stores:id,name,company_id'
         ])->orderByDesc('id');
 
-        // Return results
-        return $perPage ? $query->paginate($perPage) : $query->get();
+        if ($perPage) {
+            return $query->paginate($perPage);
+        }
+        return $query->get();
     }
-
 
     public function createCompany(array $data)
     {
-        // handle logo upload if present
-        if (isset($data['logo']) && $data['logo'] instanceof \Illuminate\Http\UploadedFile) {
+        // save the uploaded logo file
+        if (isset($data['logo']) && $data['logo'] instanceof UploadedFile) {
             $data['logo'] = $this->fileUpload($data['logo'], 'logos');
         }
 
         $data['code'] = generateCode('CMP', 'companies', 'code');
-
 
         return Company::create($data);
     }
 
     public function updateCompany(Company $company, array $data)
     {
-        // handle logo replacement
-        if (isset($data['logo']) && $data['logo'] instanceof \Illuminate\Http\UploadedFile) {
+        // a new logo replaces the old file
+        if (isset($data['logo']) && $data['logo'] instanceof UploadedFile) {
             $data['logo'] = $this->fileUpload($data['logo'], 'logos', $company->logo_path);
         }
-        $company->update($data); // updates the model
-        return $company;         // return the model itself
-    }
 
+        $company->update($data);
+        return $company;
+    }
 
     public function softDeleteCompany(Company $company)
     {
@@ -118,45 +118,27 @@ class CompanyService
         return $company;
     }
 
+    // only a company in the trash can be deleted for ever (its logo file too)
     public function forceDeleteCompany(Company $company)
     {
         if ($company->trashed()) {
-            // delete logo from storage
             $this->unlink($company->logo);
-
             $company->forceDelete();
             return true;
         }
         return false;
     }
-    /**
-     * Get company code by ID
-     */
-    public function getCompanyCodeById(int $id): ?string
-    {
-        return Company::where('id', $id)->value('code');
-    }
 
-    /**
-     * Get company short code by ID (assuming 'code' is the short code)
-     * If you need both short code and full code, you can modify accordingly
-     */
-    public function getCompanyShortCodeById(int $id): ?string
+    // company of the logged in user, null for Super Admin or a user without company
+    private function ownCompanyId()
     {
-        return Company::where('id', $id)->value('code');
-    }
-
-    /**
-     * You can add more company-related methods here as needed
-     * For example:
-     */
-    public function findCompany(int $id): ?Company
-    {
-        return Company::find($id);
-    }
-
-    public function getCompanyById(int $id, array $columns = ['*']): ?Company
-    {
-        return Company::select($columns)->find($id);
+        if (!Auth::check()) {
+            return null;
+        }
+        $user = Auth::user();
+        if ($user->hasRole('Super Admin') || empty($user->company_id)) {
+            return null;
+        }
+        return $user->company_id;
     }
 }

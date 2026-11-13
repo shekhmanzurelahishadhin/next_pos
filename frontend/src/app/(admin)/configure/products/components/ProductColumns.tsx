@@ -21,8 +21,43 @@ interface UseProductColumnsProps {
 }
 
 // { value, label } list for a dropdown filter
-const toFilter = (list: { value: number; label: string }[]) =>
-  list.map((item) => ({ value: String(item.value), label: item.label }));
+function toFilter(list: { value: number; label: string }[]) {
+  const filterOptions: { value: string; label: string }[] = [];
+  for (const item of list) {
+    filterOptions.push({ value: String(item.value), label: item.label });
+  }
+  return filterOptions;
+}
+
+// the same sub-category name can be under many categories, so show "Engine (G)"
+function subCategoryFilterOptions(options: ProductOptions) {
+  const filterOptions: { value: string; label: string }[] = [];
+  for (const sub of options.subCategories) {
+    let categoryName = "-";
+    for (const category of options.categories) {
+      if (category.value === sub.category_id) {
+        categoryName = category.label;
+        break;
+      }
+    }
+    filterOptions.push({ value: String(sub.value), label: sub.label + " (" + categoryName + ")" });
+  }
+  return filterOptions;
+}
+
+// vehicle brand + own model (or the supported models), the empty ones left out
+function vehicleText(product: Product) {
+  const parts: string[] = [];
+  if (product.vehicle_brand_name) {
+    parts.push(product.vehicle_brand_name);
+  }
+  if (product.model) {
+    parts.push(product.model);
+  } else if (product.supported_models) {
+    parts.push(product.supported_models);
+  }
+  return parts.join(" ");
+}
 
 export const useProductColumns = ({
   hasPermission,
@@ -37,233 +72,242 @@ export const useProductColumns = ({
   options,
   models,
 }: UseProductColumnsProps): ColumnDef<Product>[] => {
-  // same sub-category name can be under many categories, so show "Engine (G)"
-  const subCategoryFilter = options.subCategories.map((sub) => ({
-    value: String(sub.value),
-    label: `${sub.label} (${options.categories.find((c) => c.value === sub.category_id)?.label ?? "-"})`,
-  }));
+  return useMemo((): ColumnDef<Product>[] => {
+    const subCategoryFilter = subCategoryFilterOptions(options);
 
-  return useMemo((): ColumnDef<Product>[] => [
-    {
-      id: "sl",
-      header: "SL",
-      enableSorting: false,
-      meta: {
-        filterVariant: "none",
-        exportable: true,
-        exportHeader: "SL",
-        exportValue: (row, index) => (pageIndex * pageSize) + (index ?? 0) + 1,
-        widthClass: "w-[30px]"
-      },
-      cell: ({ row }) => (
-        <span className="text-gray-600 dark:text-gray-400">
-          {(pageIndex * pageSize) + row.index + 1}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "part_number",
-      header: "Part Number",
-      enableSorting: true,
-      meta: {
-        filterVariant: "text",
-        placeholder: "Search part no",
-        exportable: true,
-        exportHeader: "Part Number",
-        exportValue: (row) => row.part_number,
-        widthClass: "w-[140px]"
-      },
-      cell: ({ row }) => (
-        <span className="font-medium text-gray-800 dark:text-white/90">
-          {row.original.part_number}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "name",
-      header: "Product Name",
-      enableSorting: true,
-      meta: {
-        filterVariant: "text",
-        placeholder: "Search names",
-        exportable: true,
-        exportHeader: "Product Name",
-        exportValue: (row) => row.name,
-        widthClass: "w-[200px]"
-      },
-      cell: ({ row }) => (
-        <span className="text-gray-800 dark:text-white/90">{row.original.name}</span>
-      ),
-    },
-    {
-      // id is the backend filter name
-      id: "category_id",
-      accessorKey: "product_category_name",
-      header: "Category",
-      enableSorting: false,
-      meta: {
-        filterVariant: "searchSelect",
-        filterOptions: toFilter(options.categories),
-        mergeBy: (row) => row.product_category_id,
-        exportable: true,
-        exportHeader: "Category",
-        exportValue: (row) => row.product_category_name || "—",
-        widthClass: "w-[110px]"
-      },
-      cell: ({ row }) => (
-        <span className="font-medium text-gray-700 dark:text-gray-300">{row.original.product_category_name || "—"}</span>
-      ),
-    },
-    {
-      id: "sub_category_id",
-      accessorKey: "sub_category_name",
-      header: "Sub-Category",
-      enableSorting: false,
-      meta: {
-        filterVariant: "searchSelect",
-        filterOptions: subCategoryFilter,
-        mergeBy: (row) => `${row.product_category_id}-${row.sub_category_id ?? ""}`,
-        exportable: true,
-        exportHeader: "Sub-Category",
-        exportValue: (row) => row.sub_category_name || "—",
-        widthClass: "w-[130px]"
-      },
-      cell: ({ row }) => (
-        <span className="text-gray-700 dark:text-gray-300">{row.original.sub_category_name || "—"}</span>
-      ),
-    },
-    {
-      id: "brand_id",
-      accessorKey: "brand_name",
-      header: "Brand",
-      enableSorting: false,
-      meta: {
-        filterVariant: "searchSelect",
-        filterOptions: toFilter(options.brands),
-        exportable: true,
-        exportHeader: "Brand",
-        exportValue: (row) => row.brand_name || "—",
-        widthClass: "w-[120px]"
-      },
-      cell: ({ row }) => (
-        <span className="text-gray-700 dark:text-gray-300">{row.original.brand_name || "—"}</span>
-      ),
-    },
-    {
-      accessorKey: "model",
-      header: "Vehicle / Model",
-      enableSorting: false,
-      meta: {
-        filterVariant: "searchSelect",
-        filterOptions: models.map((model) => ({ value: model, label: model })),
-        exportable: true,
-        exportHeader: "Vehicle / Model",
-        exportValue: (row) => [row.vehicle_brand_name, row.model || row.supported_models, row.model_year].filter(Boolean).join(" ") || "—",
-        widthClass: "w-[180px]"
-      },
-      cell: ({ row }) => {
-        const p = row.original;
-        const text = [p.vehicle_brand_name, p.model || p.supported_models].filter(Boolean).join(" ");
-        return (
-          <span className="line-clamp-2 text-gray-700 dark:text-gray-300" title={text}>
-            {text || "—"}
-            {p.model_year && <span className="text-gray-400"> ({p.model_year})</span>}
+    const modelOptions: { value: string; label: string }[] = [];
+    for (const model of models) {
+      modelOptions.push({ value: model, label: model });
+    }
+
+    return [
+      {
+        id: "sl",
+        header: "SL",
+        enableSorting: false,
+        meta: {
+          filterVariant: "none",
+          exportable: true,
+          exportHeader: "SL",
+          exportValue: (row, index) => (pageIndex * pageSize) + (index ?? 0) + 1,
+          widthClass: "w-[30px]"
+        },
+        cell: ({ row }) => (
+          <span className="text-gray-600 dark:text-gray-400">
+            {(pageIndex * pageSize) + row.index + 1}
           </span>
-        );
+        ),
       },
-    },
-    {
-      id: "unit_id",
-      accessorKey: "unit_name",
-      header: "Unit",
-      enableSorting: false,
-      meta: {
-        filterVariant: "searchSelect",
-        filterOptions: toFilter(options.units),
-        exportable: true,
-        exportHeader: "Unit",
-        exportValue: (row) => row.unit_name || "—",
-        widthClass: "w-[90px]"
+      {
+        accessorKey: "part_number",
+        header: "Part Number",
+        enableSorting: true,
+        meta: {
+          filterVariant: "text",
+          placeholder: "Search part no",
+          exportable: true,
+          exportHeader: "Part Number",
+          exportValue: (row) => row.part_number,
+          widthClass: "w-[140px]"
+        },
+        cell: ({ row }) => (
+          <span className="font-medium text-gray-800 dark:text-white/90">
+            {row.original.part_number}
+          </span>
+        ),
       },
-      cell: ({ row }) => (
-        <span className="text-gray-700 dark:text-gray-300">{row.original.unit_name || "—"}</span>
-      ),
-    },
-    {
-      accessorKey: "status",
-      header: "Status",
-      enableSorting: true,
-      meta: {
-        filterVariant: "select",
-        filterOptions: [
-          ...status.map((s) => ({ value: s.value.toString(), label: s.label })),
-          { value: "trash", label: "Trashed" },
-        ],
-        exportable: true,
-        exportHeader: "Status",
-        exportValue: (row) => (Number(row.status) === 1 ? "Active" : "Inactive"),
-        widthClass: "w-[100px]"
+      {
+        accessorKey: "name",
+        header: "Product Name",
+        enableSorting: true,
+        meta: {
+          filterVariant: "text",
+          placeholder: "Search names",
+          exportable: true,
+          exportHeader: "Product Name",
+          exportValue: (row) => row.name,
+          widthClass: "w-[200px]"
+        },
+        cell: ({ row }) => (
+          <span className="text-gray-800 dark:text-white/90">{row.original.name}</span>
+        ),
       },
-      cell: ({ row }) => (
-        <StatusBadge status={row.original.status} trashed={!!row.original.deleted_at} />
-      ),
-    },
-    {
-      id: "Actions",
-      header: () => <div className="">Actions</div>,
-      enableSorting: false,
-      meta: {
-        filterVariant: "none",
-        exportable: false,
-        widthClass: "w-[110px]"
+      {
+        // id is the backend filter name
+        id: "category_id",
+        accessorKey: "product_category_name",
+        header: "Category",
+        enableSorting: false,
+        meta: {
+          filterVariant: "searchSelect",
+          filterOptions: toFilter(options.categories),
+          mergeBy: (row) => row.product_category_id,
+          exportable: true,
+          exportHeader: "Category",
+          exportValue: (row) => row.product_category_name || "—",
+          widthClass: "w-[110px]"
+        },
+        cell: ({ row }) => (
+          <span className="font-medium text-gray-700 dark:text-gray-300">{row.original.product_category_name || "—"}</span>
+        ),
       },
-      cell: ({ row }) => (
-        <ActionButtons
-          row={row.original}
-          buttons={[
-            {
-              icon: FiEye,
-              onClick: (row) => onView(row as Product),
-              variant: "success",
-              size: "sm",
-              tooltip: "View",
-              show: () => hasPermission("product.view"),
-            },
-            {
-              icon: FiEdit,
-              onClick: (row) => onEdit(row as Product),
-              variant: "primary",
-              size: "sm",
-              tooltip: "Edit",
-              show: (row) => !row.deleted_at && hasPermission("product.edit"),
-            },
-            {
-              icon: FiTrash,
-              onClick: (row) => handleSoftDelete((row as Product).id),
-              variant: "danger",
-              size: "sm",
-              tooltip: "Move to Trash",
-              show: (row) => !row.deleted_at && hasPermission("product.delete"),
-            },
-            {
-              icon: FiRefreshCw,
-              onClick: (row) => handleRestore((row as Product).id),
-              variant: "success",
-              size: "sm",
-              tooltip: "Restore",
-              show: (row) => !!row.deleted_at && hasPermission("product.delete"),
-            },
-            {
-              icon: FiTrash,
-              onClick: (row) => handleForceDelete((row as Product).id),
-              variant: "danger",
-              size: "sm",
-              tooltip: "Delete Permanently",
-              show: (row) => !!row.deleted_at && hasPermission("product.delete"),
-            },
-          ]}
-        />
-      ),
-    },
-  ], [hasPermission, onView, onEdit, handleForceDelete, handleSoftDelete, handleRestore, pageIndex, pageSize, status, options, models, subCategoryFilter]);
+      {
+        id: "sub_category_id",
+        accessorKey: "sub_category_name",
+        header: "Sub-Category",
+        enableSorting: false,
+        meta: {
+          filterVariant: "searchSelect",
+          filterOptions: subCategoryFilter,
+          mergeBy: (row) => `${row.product_category_id}-${row.sub_category_id ?? ""}`,
+          exportable: true,
+          exportHeader: "Sub-Category",
+          exportValue: (row) => row.sub_category_name || "—",
+          widthClass: "w-[130px]"
+        },
+        cell: ({ row }) => (
+          <span className="text-gray-700 dark:text-gray-300">{row.original.sub_category_name || "—"}</span>
+        ),
+      },
+      {
+        id: "brand_id",
+        accessorKey: "brand_name",
+        header: "Brand",
+        enableSorting: false,
+        meta: {
+          filterVariant: "searchSelect",
+          filterOptions: toFilter(options.brands),
+          exportable: true,
+          exportHeader: "Brand",
+          exportValue: (row) => row.brand_name || "—",
+          widthClass: "w-[120px]"
+        },
+        cell: ({ row }) => (
+          <span className="text-gray-700 dark:text-gray-300">{row.original.brand_name || "—"}</span>
+        ),
+      },
+      {
+        accessorKey: "model",
+        header: "Vehicle / Model",
+        enableSorting: false,
+        meta: {
+          filterVariant: "searchSelect",
+          filterOptions: modelOptions,
+          exportable: true,
+          exportHeader: "Vehicle / Model",
+          exportValue: (row) => {
+            let text = vehicleText(row);
+            if (row.model_year) {
+              text = (text + " " + row.model_year).trim();
+            }
+            return text || "—";
+          },
+          widthClass: "w-[180px]"
+        },
+        cell: ({ row }) => {
+          const product = row.original;
+          const text = vehicleText(product);
+          return (
+            <span className="line-clamp-2 text-gray-700 dark:text-gray-300" title={text}>
+              {text || "—"}
+              {product.model_year && <span className="text-gray-400"> ({product.model_year})</span>}
+            </span>
+          );
+        },
+      },
+      {
+        id: "unit_id",
+        accessorKey: "unit_name",
+        header: "Unit",
+        enableSorting: false,
+        meta: {
+          filterVariant: "searchSelect",
+          filterOptions: toFilter(options.units),
+          exportable: true,
+          exportHeader: "Unit",
+          exportValue: (row) => row.unit_name || "—",
+          widthClass: "w-[90px]"
+        },
+        cell: ({ row }) => (
+          <span className="text-gray-700 dark:text-gray-300">{row.original.unit_name || "—"}</span>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        enableSorting: true,
+        meta: {
+          filterVariant: "select",
+          filterOptions: [
+            ...status.map((s) => ({ value: s.value.toString(), label: s.label })),
+            { value: "trash", label: "Trashed" },
+          ],
+          exportable: true,
+          exportHeader: "Status",
+          exportValue: (row) => (Number(row.status) === 1 ? "Active" : "Inactive"),
+          widthClass: "w-[100px]"
+        },
+        cell: ({ row }) => (
+          <StatusBadge status={row.original.status} trashed={!!row.original.deleted_at} />
+        ),
+      },
+      {
+        id: "Actions",
+        header: () => <div className="">Actions</div>,
+        enableSorting: false,
+        meta: {
+          filterVariant: "none",
+          exportable: false,
+          widthClass: "w-[110px]"
+        },
+        cell: ({ row }) => (
+          <ActionButtons
+            row={row.original}
+            buttons={[
+              {
+                icon: FiEye,
+                onClick: (row) => onView(row as Product),
+                variant: "success",
+                size: "sm",
+                tooltip: "View",
+                show: () => hasPermission("product.view"),
+              },
+              {
+                icon: FiEdit,
+                onClick: (row) => onEdit(row as Product),
+                variant: "primary",
+                size: "sm",
+                tooltip: "Edit",
+                show: (row) => !row.deleted_at && hasPermission("product.edit"),
+              },
+              {
+                icon: FiTrash,
+                onClick: (row) => handleSoftDelete((row as Product).id),
+                variant: "danger",
+                size: "sm",
+                tooltip: "Move to Trash",
+                show: (row) => !row.deleted_at && hasPermission("product.delete"),
+              },
+              {
+                icon: FiRefreshCw,
+                onClick: (row) => handleRestore((row as Product).id),
+                variant: "success",
+                size: "sm",
+                tooltip: "Restore",
+                show: (row) => !!row.deleted_at && hasPermission("product.delete"),
+              },
+              {
+                icon: FiTrash,
+                onClick: (row) => handleForceDelete((row as Product).id),
+                variant: "danger",
+                size: "sm",
+                tooltip: "Delete Permanently",
+                show: (row) => !!row.deleted_at && hasPermission("product.delete"),
+              },
+            ]}
+          />
+        ),
+      },
+    ];
+  }, [hasPermission, onView, onEdit, handleForceDelete, handleSoftDelete, handleRestore, pageIndex, pageSize, status, options, models]);
 };

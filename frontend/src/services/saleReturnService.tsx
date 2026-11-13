@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { removeEmpty } from "@/lib/options";
 
 // "Sales Return" page row: one sold barcode of an approved SO
 export interface SaleReturnableRow {
@@ -75,12 +76,9 @@ export interface SaleReturnRow {
 
 const BASE = "/sales/sale-returns";
 
-const clean = (filters: Record<string, string | number>) =>
-  Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "" && v !== undefined && v !== null));
-
 class SaleReturnService {
   async getReturnable(filters: Record<string, string | number> = {}) {
-    const res = await api.get(`${BASE}/returnable`, { params: clean(filters) });
+    const res = await api.get(`${BASE}/returnable`, { params: removeEmpty(filters) });
     return res.data.data as { data: SaleReturnableRow[]; total: number };
   }
 
@@ -95,7 +93,7 @@ class SaleReturnService {
   }
 
   async getReturns(filters: Record<string, string | number> = {}) {
-    const res = await api.get(BASE, { params: clean(filters) });
+    const res = await api.get(BASE, { params: removeEmpty(filters) });
     return res.data.data as { data: SaleReturnRow[]; total: number };
   }
 

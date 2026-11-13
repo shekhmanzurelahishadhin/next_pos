@@ -13,7 +13,14 @@ import { ProductPriceRow } from "@/services/productPriceService";
 import { productColumns, useProductPriceList } from "../_product-prices/useProductPriceList";
 import { PurchasePriceModal } from "../_product-prices/PriceModals";
 
-const money = (value: number | null) => <span className="block text-right">{value === null ? "—" : formatMoney(value)}</span>;
+// a price on the right, "—" when the product has none
+function money(value: number | null) {
+  let text = "—";
+  if (value !== null) {
+    text = formatMoney(value);
+  }
+  return <span className="block text-right">{text}</span>;
+}
 
 // parts_bazar "Add Purchase Prices": active purchase price of each product, add a new one by hand
 export default function PurchasePricePage() {

@@ -8,14 +8,13 @@ import Label from "@/components/form/Label";
 import DatePicker from "@/components/form/date-picker";
 import { printHtml } from "@/lib/print";
 import { formatDate, formatMoney } from "@/lib/format";
-import { saleReturnService, SaleReturnForm } from "@/services/saleReturnService";
+import { apiErrorMessage, blurOnWheel, today } from "@/lib/options";
+import { saleReturnService, SaleReturnForm, SaleReturnPayload } from "@/services/saleReturnService";
 
 const inputClass =
   "h-9 w-full rounded-md border border-gray-300 bg-transparent px-2.5 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90";
 const readOnlyClass =
   "flex h-9 w-full items-center rounded-md bg-gray-100 px-3 text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-300";
-
-const today = () => new Date().toISOString().slice(0, 10);
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -40,41 +39,80 @@ export function SaleReturnFormModal({ saleId, onClose, onSaved }: SaleReturnForm
   const [isRefund, setIsRefund] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // a new SO starts with an empty form
   useEffect(() => {
     setForm(null);
     setQty({});
     setReturnDate(today());
     setRemarks("");
     setIsRefund(false);
-    if (!saleId) return;
+    if (!saleId) {
+      return;
+    }
+
     saleReturnService.getForm(saleId)
       .then(setForm)
       .catch((err) => {
-        toast.error(err?.response?.data?.message || "Failed to load return form");
+        toast.error(apiErrorMessage(err, "Failed to load return form"));
         onClose();
       });
   }, [saleId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const changeDate = useCallback((_dates: Date[], dateStr: string) => setReturnDate(dateStr), []);
+  // the date picker needs a function that does not change on every render
+  const changeDate = useCallback((_dates: Date[], dateStr: string) => {
+    setReturnDate(dateStr);
+  }, []);
 
   // parts_bazar calculateGridInLine: return qty can not pass the remaining qty
-  const changeQty = (detailId: number, value: string, remaining: number) => {
-    const n = parseInt(value);
-    if (value !== "" && (isNaN(n) || n < 0 || n > remaining)) {
+  function changeQty(detailId: number, value: string, remaining: number) {
+    const number = parseInt(value);
+    if (value !== "" && (isNaN(number) || number < 0 || number > remaining)) {
       toast.error("Return qty exceeded!");
-      setQty((q) => ({ ...q, [detailId]: "" }));
+      setQty({ ...qty, [detailId]: "" });
       return;
     }
-    setQty((q) => ({ ...q, [detailId]: value }));
-  };
+    setQty({ ...qty, [detailId]: value });
+  }
 
-  const lineQty = (detailId: number) => parseInt(qty[detailId] ?? "") || 0;
-  const totalAmount = form?.items.reduce((sum, item) => sum + item.sell_price * lineQty(item.sale_detail_id), 0) ?? 0;
+  // return qty typed for one item, 0 when empty
+  function lineQty(detailId: number) {
+    const number = parseInt(qty[detailId] ?? "");
+    if (isNaN(number)) {
+      return 0;
+    }
+    return number;
+  }
 
-  const save = async () => {
-    if (!form) return;
-    if (!returnDate) return toast.error("Please select return date!");
-    if (!form.items.some((item) => lineQty(item.sale_detail_id) > 0)) return toast.error("Please enter return qty!");
+  let totalAmount = 0;
+  if (form) {
+    for (const item of form.items) {
+      totalAmount += item.sell_price * lineQty(item.sale_detail_id);
+    }
+  }
+
+  async function save() {
+    if (!form) {
+      return;
+    }
+    if (!returnDate) {
+      toast.error("Please select return date!");
+      return;
+    }
+
+    // every item with its return qty
+    const payloadItems: SaleReturnPayload["items"] = [];
+    let hasQty = false;
+    for (const item of form.items) {
+      const returnQty = lineQty(item.sale_detail_id);
+      if (returnQty > 0) {
+        hasQty = true;
+      }
+      payloadItems.push({ sale_detail_id: item.sale_detail_id, return_qty: returnQty });
+    }
+    if (!hasQty) {
+      toast.error("Please enter return qty!");
+      return;
+    }
 
     try {
       setSaving(true);
@@ -83,18 +121,16 @@ export function SaleReturnFormModal({ saleId, onClose, onSaved }: SaleReturnForm
         return_date: returnDate,
         is_refund: isRefund,
         remarks: remarks || undefined,
-        items: form.items.map((item) => ({ sale_detail_id: item.sale_detail_id, return_qty: lineQty(item.sale_detail_id) })),
+        items: payloadItems,
       });
       toast.success(`Successfully Returned (${saved.return_no})`);
       onSaved(saved.id);
-    } catch (err: any) {
-      const errors = err?.response?.data?.errors;
-      const first = errors && Object.values(errors)[0];
-      toast.error((Array.isArray(first) ? first[0] : null) || err?.response?.data?.message || "Return not saved");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Return not saved"));
     } finally {
       setSaving(false);
     }
-  };
+  }
 
   return (
     <Modal
@@ -139,18 +175,27 @@ export function SaleReturnFormModal({ saleId, onClose, onSaved }: SaleReturnForm
             <table className="w-full min-w-[900px] text-[13px]">
               <thead>
                 <tr className="bg-gray-50 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                  {["SL", "Store", "Location", "Product Name", "Part Number", "Barcode", "Sales Qty", "Old Return Qty", "Return Qty", "Remaining Qty", "Sell Price", "Amount"].map((h) => (
-                    <th key={h} className="px-2 py-2 text-center font-medium">{h}</th>
-                  ))}
+                  <th className="px-2 py-2 text-center font-medium">SL</th>
+                  <th className="px-2 py-2 text-center font-medium">Store</th>
+                  <th className="px-2 py-2 text-center font-medium">Location</th>
+                  <th className="px-2 py-2 text-center font-medium">Product Name</th>
+                  <th className="px-2 py-2 text-center font-medium">Part Number</th>
+                  <th className="px-2 py-2 text-center font-medium">Barcode</th>
+                  <th className="px-2 py-2 text-center font-medium">Sales Qty</th>
+                  <th className="px-2 py-2 text-center font-medium">Old Return Qty</th>
+                  <th className="px-2 py-2 text-center font-medium">Return Qty</th>
+                  <th className="px-2 py-2 text-center font-medium">Remaining Qty</th>
+                  <th className="px-2 py-2 text-center font-medium">Sell Price</th>
+                  <th className="px-2 py-2 text-center font-medium">Amount</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-center text-gray-700 dark:divide-white/[0.05] dark:text-gray-300">
-                {form.items.map((item, i) => {
+                {form.items.map((item, index) => {
                   const remaining = item.sold_qty - item.returned_qty;
-                  const q = lineQty(item.sale_detail_id);
+                  const returnQty = lineQty(item.sale_detail_id);
                   return (
                     <tr key={item.sale_detail_id}>
-                      <td className="px-2 py-1.5">{i + 1}</td>
+                      <td className="px-2 py-1.5">{index + 1}</td>
                       <td className="px-2 py-1.5">{item.store_name}</td>
                       <td className="px-2 py-1.5">{item.location_name}</td>
                       <td className="px-2 py-1.5">{item.product_name}</td>
@@ -166,13 +211,13 @@ export function SaleReturnFormModal({ saleId, onClose, onSaved }: SaleReturnForm
                           value={qty[item.sale_detail_id] ?? ""}
                           disabled={remaining <= 0}
                           onChange={(e) => changeQty(item.sale_detail_id, e.target.value, remaining)}
-                          onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                          onWheel={blurOnWheel}
                           className={`${inputClass} text-center disabled:bg-gray-100 dark:disabled:bg-gray-800`}
                         />
                       </td>
-                      <td className="px-2 py-1.5">{remaining - q}</td>
+                      <td className="px-2 py-1.5">{remaining - returnQty}</td>
                       <td className="px-2 py-1.5 text-right">{formatMoney(item.sell_price)}</td>
-                      <td className="px-2 py-1.5 text-right">{formatMoney(item.sell_price * q)}</td>
+                      <td className="px-2 py-1.5 text-right">{formatMoney(item.sell_price * returnQty)}</td>
                     </tr>
                   );
                 })}
@@ -208,19 +253,25 @@ const cell = "border border-gray-200 px-2 py-1 dark:border-gray-700";
 
 // "SALES RETURN" chalan: shown after saving and from Sales Return Manage
 export function SaleReturnChalanModal({ returnId, onClose }: { returnId: number | null; onClose: () => void }) {
-  const [data, setData] = useState<any>(null);
+  const [saleReturn, setSaleReturn] = useState<any>(null);
   const printArea = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setData(null);
-    if (returnId) saleReturnService.getReturn(returnId).then(setData).catch(() => toast.error("Failed to load return"));
+    setSaleReturn(null);
+    if (returnId) {
+      saleReturnService.getReturn(returnId)
+        .then(setSaleReturn)
+        .catch(() => toast.error("Failed to load return"));
+    }
   }, [returnId]);
 
-  const print = () => {
-    if (printArea.current) printHtml(data?.return_no ?? "Return", printArea.current.innerHTML, PRINT_STYLE);
-  };
-
-  const r = data;
+  function print() {
+    if (!printArea.current) {
+      return;
+    }
+    const title = saleReturn ? saleReturn.return_no : "Return";
+    printHtml(title, printArea.current.innerHTML, PRINT_STYLE);
+  }
 
   return (
     <Modal
@@ -231,34 +282,34 @@ export function SaleReturnChalanModal({ returnId, onClose }: { returnId: number 
       footer={
         <>
           <Button type="button" size="sm" variant="outline" onClick={onClose}>Close</Button>
-          <Button type="button" size="sm" onClick={print} disabled={!r}>Print</Button>
+          <Button type="button" size="sm" onClick={print} disabled={!saleReturn}>Print</Button>
         </>
       }
     >
-      {!r ? (
+      {!saleReturn ? (
         <p className="py-8 text-center text-sm text-gray-500">Loading...</p>
       ) : (
         <div ref={printArea} className="text-[13px] text-gray-800 dark:text-gray-200">
           <div className="text-center">
-            <h2 className="text-lg font-semibold">{r.company?.name ?? "Sales Return"}</h2>
-            {r.company?.address && <div className="text-xs text-gray-500">{r.company.address}</div>}
-            {r.company?.phone && <div className="text-xs text-gray-500">Phone No: {r.company.phone}</div>}
+            <h2 className="text-lg font-semibold">{saleReturn.company ? saleReturn.company.name : "Sales Return"}</h2>
+            {saleReturn.company?.address && <div className="text-xs text-gray-500">{saleReturn.company.address}</div>}
+            {saleReturn.company?.phone && <div className="text-xs text-gray-500">Phone No: {saleReturn.company.phone}</div>}
             <h3 className="mt-1 text-sm font-semibold">SALES RETURN</h3>
           </div>
 
           <div className="info my-3 flex flex-wrap justify-between gap-6">
             <table>
               <tbody>
-                <tr><td className="pr-3 text-gray-500">Customer Name</td><td className="font-semibold">{r.customer?.name}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Contact Number</td><td>{r.customer?.phone || "-"}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Address</td><td>{r.customer?.address || "-"}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Customer Name</td><td className="font-semibold">{saleReturn.customer?.name}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Contact Number</td><td>{saleReturn.customer?.phone || "-"}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Address</td><td>{saleReturn.customer?.address || "-"}</td></tr>
               </tbody>
             </table>
             <table>
               <tbody>
-                <tr><td className="pr-3 text-gray-500">Return No</td><td className="font-semibold">{r.return_no}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Return Date</td><td>{formatDate(r.return_date)}</td></tr>
-                <tr><td className="pr-3 text-gray-500">Invoice No</td><td>{r.sale?.so_no}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Return No</td><td className="font-semibold">{saleReturn.return_no}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Return Date</td><td>{formatDate(saleReturn.return_date)}</td></tr>
+                <tr><td className="pr-3 text-gray-500">Invoice No</td><td>{saleReturn.sale?.so_no}</td></tr>
               </tbody>
             </table>
           </div>
@@ -266,36 +317,44 @@ export function SaleReturnChalanModal({ returnId, onClose }: { returnId: number 
           <table className="items w-full border-collapse text-xs">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-800">
-                {["SL", "Location", "Items Name", "Barcode", "Sales Qty", "Return Qty", "Return Amount"].map((h) => (
-                  <th key={h} className={`${cell} text-left font-medium`}>{h}</th>
-                ))}
+                <th className={`${cell} text-left font-medium`}>SL</th>
+                <th className={`${cell} text-left font-medium`}>Location</th>
+                <th className={`${cell} text-left font-medium`}>Items Name</th>
+                <th className={`${cell} text-left font-medium`}>Barcode</th>
+                <th className={`${cell} text-left font-medium`}>Sales Qty</th>
+                <th className={`${cell} text-left font-medium`}>Return Qty</th>
+                <th className={`${cell} text-left font-medium`}>Return Amount</th>
               </tr>
             </thead>
             <tbody>
-              {r.details.map((d: any, i: number) => (
-                <tr key={d.id}>
-                  <td className={cell}>{i + 1}</td>
-                  <td className={cell}>{d.location?.name}</td>
-                  <td className={cell}>{d.product?.name}</td>
-                  <td className={cell}>{d.barcode}</td>
-                  <td className={`${cell} text-right`}>{Number(d.sale_detail?.qty ?? 0)} {d.sale_detail?.unit ?? ""}</td>
-                  <td className={`${cell} text-right`}>{Number(d.return_qty)} {d.sale_detail?.unit ?? ""}</td>
-                  <td className={`${cell} text-right`}>{formatMoney(d.total_price)}</td>
-                </tr>
-              ))}
+              {saleReturn.details.map((detail: any, index: number) => {
+                const soldQty = detail.sale_detail ? Number(detail.sale_detail.qty) : 0;
+                const unit = detail.sale_detail?.unit ?? "";
+                return (
+                  <tr key={detail.id}>
+                    <td className={cell}>{index + 1}</td>
+                    <td className={cell}>{detail.location?.name}</td>
+                    <td className={cell}>{detail.product?.name}</td>
+                    <td className={cell}>{detail.barcode}</td>
+                    <td className={`${cell} text-right`}>{soldQty} {unit}</td>
+                    <td className={`${cell} text-right`}>{Number(detail.return_qty)} {unit}</td>
+                    <td className={`${cell} text-right`}>{formatMoney(detail.total_price)}</td>
+                  </tr>
+                );
+              })}
               <tr>
                 <td colSpan={6} className={`${cell} text-right font-semibold`}>Total Return Amount</td>
-                <td className={`${cell} text-right font-semibold`}>{formatMoney(r.total_amount)}</td>
+                <td className={`${cell} text-right font-semibold`}>{formatMoney(saleReturn.total_amount)}</td>
               </tr>
               <tr>
                 <td colSpan={6} className={`${cell} text-right font-semibold`}>Refund Amount</td>
-                <td className={`${cell} text-right font-semibold`}>{formatMoney(r.refund_amount)}</td>
+                <td className={`${cell} text-right font-semibold`}>{formatMoney(saleReturn.refund_amount)}</td>
               </tr>
             </tbody>
           </table>
 
           <div className="sign mt-14 flex justify-between text-xs">
-            <span className="w-40 border-t border-gray-400 pt-1 text-center">Prepared By: {r.created_by?.name ?? ""}</span>
+            <span className="w-40 border-t border-gray-400 pt-1 text-center">Prepared By: {saleReturn.created_by ? saleReturn.created_by.name : ""}</span>
             <span className="w-40 border-t border-gray-400 pt-1 text-center">Received By</span>
           </div>
         </div>

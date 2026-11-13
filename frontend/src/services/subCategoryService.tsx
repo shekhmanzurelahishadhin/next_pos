@@ -1,8 +1,5 @@
 import { api } from "@/lib/api";
-
-// Simple in-memory cache
-const cache = new Map();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+import { pickFilters } from "@/lib/options";
 
 export interface SubCategory {
   id: number;
@@ -37,57 +34,19 @@ export interface SubCategoryFilters {
 }
 
 class SubCategoryService {
-  private getCacheKey(filters: SubCategoryFilters): string {
-    return `subCategories_${JSON.stringify(filters)}`;
-  }
-
-  private setCache(key: string, data: any): void {
-    cache.set(key, {
-      data,
-      timestamp: Date.now()
-    });
-  }
-
-  private getCache(key: string): any {
-    const cached = cache.get(key);
-    // check expiration
-    if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
-      return cached.data;
-    }
-    cache.delete(key); // expired → delete it
-    return null;
-  }
-
   async getSubCategories(filters: SubCategoryFilters = {}): Promise<PaginatedResponse<SubCategory>> {
-    const params = new URLSearchParams();
-
-    // Common filter fields
-    if (filters.search) params.append('search', filters.search);
-    if (filters.page) params.append('page', filters.page.toString());
-    if (filters.per_page) params.append('per_page', filters.per_page.toString());
-
-    // Specific filter fields
-    if (filters.name) params.append('name', filters.name);
-    if (filters.slug) params.append('slug', filters.slug);
-    if (filters.category_name) params.append('category_name', filters.category_name);
-    if (filters.status) params.append('status', filters.status);
-    if (filters.created_at) params.append('created_at', filters.created_at);
-    if (filters.updated_at) params.append('updated_at', filters.updated_at);
-
-    const response = await api.get(`/configure/sub-categories?${params}`);
-    const result = response.data.data;
-
-    return result;
+    // only these filters go to the API, and only when they have a value
+    const params = pickFilters(filters, ['search', 'page', 'per_page', 'name', 'slug', 'category_name', 'status', 'created_at', 'updated_at']);
+    const response = await api.get('/configure/sub-categories', { params: params });
+    return response.data.data;
   }
 
   async createSubCategory(categoryData: { name: string, category_id: number }): Promise<SubCategory> {
-
     const response = await api.post('/configure/sub-categories', categoryData);
     return response.data.data;
   }
 
   async updateSubCategory(id: number, categoryData: { name: string, category_id: number, status: string }): Promise<SubCategory> {
-
     const response = await api.put(`/configure/sub-categories/${id}`, categoryData);
     return response.data.data;
   }

@@ -10,12 +10,33 @@ export interface ScrollCodeItem {
 
 export type ScrollCodes = Record<ScrollCodeType, ScrollCodeItem[]>;
 
+// the saved code of one item, "" when it has none
+function findCode(codes: ScrollCodes, type: ScrollCodeType, key: string): string {
+  for (const item of codes[type]) {
+    if (item.key === key) {
+      return item.code ?? "";
+    }
+  }
+  return "";
+}
+
 // Document number = prefix + month code + 3 digit serial + year code, e.g. SID001AR
-export const buildScrollNo = (codes: ScrollCodes, prefixKey: string, date = new Date(), serial = 1) => {
-  const find = (type: ScrollCodeType, key: string) => codes[type].find((item) => item.key === key)?.code ?? "";
-  const yearCode = String(date.getFullYear()).slice(-2).split("").map((digit) => find("year", digit) || digit).join("");
-  return find("prefix", prefixKey) + find("month", String(date.getMonth() + 1)) + String(serial).padStart(3, "0") + yearCode;
-};
+export function buildScrollNo(codes: ScrollCodes, prefixKey: string, date = new Date(), serial = 1) {
+  // each of the last 2 digits of the year has its own code (the digit itself when it has none)
+  let yearCode = "";
+  for (const digit of String(date.getFullYear()).slice(-2)) {
+    const code = findCode(codes, "year", digit);
+    if (code) {
+      yearCode += code;
+    } else {
+      yearCode += digit;
+    }
+  }
+
+  const prefix = findCode(codes, "prefix", prefixKey);
+  const monthCode = findCode(codes, "month", String(date.getMonth() + 1));
+  return prefix + monthCode + String(serial).padStart(3, "0") + yearCode;
+}
 
 class ScrollCodeService {
   async getCodes(): Promise<ScrollCodes> {
@@ -25,7 +46,7 @@ class ScrollCodeService {
 
   // codes = { key: code }
   async saveCodes(type: ScrollCodeType, codes: Record<string, string>): Promise<ScrollCodes> {
-    const response = await api.put("/configure/scroll-codes", { type, codes });
+    const response = await api.put("/configure/scroll-codes", { type: type, codes: codes });
     return response.data.data;
   }
 }

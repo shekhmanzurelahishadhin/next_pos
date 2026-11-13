@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { removeEmpty } from "@/lib/options";
 
 // One product with its active purchase / sell price (Purchase Price and Sale Price pages)
 export interface ProductPriceRow {
@@ -47,9 +48,9 @@ const BASE = "/configure/product-prices";
 
 class ProductPriceService {
   async getRows(filters: Record<string, string | number> = {}) {
-    const params = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "" && v !== undefined && v !== null));
-    const res = await api.get(BASE, { params });
-    return res.data.data as { data: ProductPriceRow[]; total: number };
+    // only the filled filters go to the API
+    const response = await api.get(BASE, { params: removeEmpty(filters) });
+    return response.data.data as { data: ProductPriceRow[]; total: number };
   }
 
   async addPurchasePrice(productId: number, data: PurchasePricePayload) {
@@ -61,8 +62,8 @@ class ProductPriceService {
   }
 
   async getSellPriceHistory(productId: number): Promise<SellPriceHistory[]> {
-    const res = await api.get(`${BASE}/${productId}/sell-price-history`);
-    return res.data.data;
+    const response = await api.get(`${BASE}/${productId}/sell-price-history`);
+    return response.data.data;
   }
 }
 

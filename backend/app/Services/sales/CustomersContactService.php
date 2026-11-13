@@ -5,35 +5,51 @@ namespace App\Services\sales;
 use App\Models\softConfig\CustomersContact;
 use Illuminate\Support\Facades\Auth;
 
+// Customer phone book
 class CustomersContactService
 {
+    // Contact list with the search filters; paginated when perPage is given
     public function getContacts(array $filters = [], $perPage = null)
     {
         $query = CustomersContact::query();
 
-        // Restrict data if user is not superadmin and has a company_id
-        if (Auth::check() && !Auth::user()->hasRole('Super Admin') && !empty(Auth::user()->company_id)) {
-            $query->where('company_id', Auth::user()->company_id);
+        // a company user can only see the contacts of own company
+        $user = Auth::user();
+        if ($user && !$user->hasRole('Super Admin') && !empty($user->company_id)) {
+            $query->where('company_id', $user->company_id);
         }
 
-        // Only trashed rows when the "Trashed" filter is picked
+        // only the deleted rows when the "Trashed" filter is picked
         if (($filters['status'] ?? '') === 'trash') {
             $query->onlyTrashed();
         }
 
-        $query
-            ->when($filters['district'] ?? null, fn($q, $v) => $q->where('district', 'like', "%{$v}%"))
-            ->when($filters['customer_name'] ?? null, fn($q, $v) => $q->where('customer_name', 'like', "%{$v}%"))
+        if (!empty($filters['district'])) {
+            $query->where('district', 'like', '%' . $filters['district'] . '%');
+        }
+        if (!empty($filters['customer_name'])) {
+            $query->where('customer_name', 'like', '%' . $filters['customer_name'] . '%');
+        }
+        if (!empty($filters['contact'])) {
             // one box searches all three numbers
-            ->when($filters['contact'] ?? null, fn($q, $v) => $q->where(fn($c) => $c
-                ->where('contact_one', 'like', "%{$v}%")
-                ->orWhere('contact_two', 'like', "%{$v}%")
-                ->orWhere('contact_three', 'like', "%{$v}%")))
-            ->when($filters['remarks'] ?? null, fn($q, $v) => $q->where('remarks', 'like', "%{$v}%"));
+            $contact = $filters['contact'];
+            $query->where(function ($where) use ($contact) {
+                $where->where('contact_one', 'like', '%' . $contact . '%')
+                    ->orWhere('contact_two', 'like', '%' . $contact . '%')
+                    ->orWhere('contact_three', 'like', '%' . $contact . '%');
+            });
+        }
+        if (!empty($filters['remarks'])) {
+            $query->where('remarks', 'like', '%' . $filters['remarks'] . '%');
+        }
 
         $query->with('createdBy:id,name')->orderByDesc('id');
 
-        return $perPage ? $query->paginate($perPage) : $query->get();
+        if ($perPage) {
+            return $query->paginate($perPage);
+        }
+
+        return $query->get();
     }
 
     public function createContact(array $data)
@@ -48,25 +64,30 @@ class CustomersContactService
         return $contact;
     }
 
+    // move to trash
     public function softDeleteContact(CustomersContact $contact)
     {
-        return $contact->delete();
+        $contact->delete();
     }
 
+    // take back from trash
     public function restoreContact(CustomersContact $contact)
     {
         if ($contact->trashed()) {
             $contact->restore();
         }
+
         return $contact;
     }
 
+    // delete for ever; only a contact in the trash can be deleted
     public function forceDeleteContact(CustomersContact $contact)
     {
-        if ($contact->trashed()) {
-            $contact->forceDelete();
-            return true;
+        if (!$contact->trashed()) {
+            return false;
         }
-        return false;
+
+        $contact->forceDelete();
+        return true;
     }
 }

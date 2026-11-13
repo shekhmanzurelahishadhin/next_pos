@@ -9,6 +9,7 @@ use App\Http\Resources\softConfig\category\CategoryResource;
 use App\Models\softConfig\Category;
 use App\Services\softConfig\CategoryService;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use App\Helpers\ApiResponse;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
@@ -33,8 +34,8 @@ class CategoryController extends Controller
             $columns = $request->get('columns', CategoryService::defaultColumns);
             $categories = $categoryService->getCategories($filters, $perPage, $columns);
 
-            if ($categories instanceof \Illuminate\Pagination\LengthAwarePaginator) {
-                $items = collect($categories->items())->map(fn($category) => new CategoryResource((object) $category, $columns));
+            if ($categories instanceof LengthAwarePaginator) {
+                $items = $this->resources($categories->items(), $columns);
                 // Paginated response
                 $data = [
                     'data'         => $items,
@@ -44,7 +45,7 @@ class CategoryController extends Controller
                 ];
             }else {
                 // Collection response (no pagination)
-                $items = collect($categories)->map(fn($category) => new CategoryResource((object) $category, $columns));
+                $items = $this->resources($categories, $columns);
                 $data = [
                     'data'         => $items,
                     'total'        => $categories->count(),
@@ -171,5 +172,15 @@ class CategoryController extends Controller
         } catch (\Exception $e) {
             return ApiResponse::serverError('Failed to delete category');
         }
+    }
+
+    // each row as a resource with only the asked columns
+    private function resources($rows, $columns)
+    {
+        $items = [];
+        foreach ($rows as $row) {
+            $items[] = new CategoryResource((object) $row, $columns);
+        }
+        return $items;
     }
 }

@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { removeEmpty } from "@/lib/options";
 
 // "Create Money Receipt" row
 export interface MrCustomerRow {
@@ -63,12 +64,9 @@ export interface MrRow {
 
 const BASE = "/sales/money-receipts";
 
-const clean = (filters: Record<string, string | number>) =>
-  Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "" && v !== undefined && v !== null));
-
 class MoneyReceiptService {
   async getCustomers(filters: Record<string, string | number> = {}) {
-    const res = await api.get(`${BASE}/customers`, { params: clean(filters) });
+    const res = await api.get(`${BASE}/customers`, { params: removeEmpty(filters) });
     return res.data.data as { data: MrCustomerRow[]; total: number };
   }
 
@@ -83,7 +81,7 @@ class MoneyReceiptService {
   }
 
   async getReceipts(filters: Record<string, string | number> = {}) {
-    const res = await api.get(BASE, { params: clean(filters) });
+    const res = await api.get(BASE, { params: removeEmpty(filters) });
     return res.data.data as { data: MrRow[]; total: number };
   }
 

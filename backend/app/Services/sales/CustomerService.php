@@ -1,8 +1,6 @@
 <?php
 
-
 namespace App\Services\sales;
-
 
 use App\Models\sales\Customer;
 use App\Models\sales\CustomerLedger;
@@ -11,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 
 class CustomerService
 {
+    // Customer list with the search filters; paginated when perPage is given
     public function getCustomers(array $filters = [], $perPage = null)
     {
         $query = Customer::query()->select(
@@ -35,34 +34,53 @@ class CustomerService
             'updated_at',
             'deleted_at'
         );
-        // Restrict data if user is not superadmin and has a company_id
-        if (Auth::check() && !Auth::user()->hasRole('Super Admin') && !empty(Auth::user()->company_id)) {
-            $query->where('company_id', Auth::user()->company_id);
+
+        // a company user can only see the customers of own company
+        $user = Auth::user();
+        if ($user && !$user->hasRole('Super Admin') && !empty($user->company_id)) {
+            $query->where('company_id', $user->company_id);
         }
 
-        // Handle status / trash logic
-        if (($filters['status'] ?? '') === 'trash') {
+        // status "trash" shows the deleted customers, any other status filters by it
+        $status = $filters['status'] ?? '';
+        if ($status === 'trash') {
             $query->onlyTrashed();
-        } elseif (isset($filters['status']) && $filters['status'] !== '') {
-            $query->where('status', $filters['status']);
+        } elseif ($status !== '' && $status !== null) {
+            $query->where('status', $status);
         }
-//        else {
-//            $query->withTrashed();
-//        }
 
-        // Apply filters
-        $query
-            ->when($filters['name'] ?? null, fn($q, $name) => $q->where('name', 'like', "%{$name}%"))
-            ->when($filters['code'] ?? null, fn($q, $code) => $q->where('code', 'like', "%{$code}%"))
-            ->when($filters['address'] ?? null, fn($q, $address) => $q->where('address', 'like', "%{$address}%"))
-            ->when($filters['email'] ?? null, fn($q, $email) => $q->where('email', 'like', "%{$email}%"))
-            ->when($filters['phone'] ?? null, fn($q, $phone) => $q->where('phone', 'like', "%{$phone}%"))
-            ->when($filters['opening_balance'] ?? null, fn($q, $opening_balance) => $q->where('opening_balance', 'like', "%{$opening_balance}%"))
-            ->when($filters['opening_balance_type'] ?? null, fn($q, $opening_balance_type) => $q->where('opening_balance_type',  $opening_balance_type))
-            ->when($filters['created_by'] ?? null, fn($q, $createdBy) => $q->whereHas('createdBy', fn($sub) => $sub->where('name', 'like', "%{$createdBy}%")))
-            ->when($filters['created_at'] ?? null, fn($q, $createdAt) => $q->whereDate('created_at', date('Y-m-d', strtotime($createdAt))));
+        if (!empty($filters['name'])) {
+            $query->where('name', 'like', '%' . $filters['name'] . '%');
+        }
+        if (!empty($filters['code'])) {
+            $query->where('code', 'like', '%' . $filters['code'] . '%');
+        }
+        if (!empty($filters['address'])) {
+            $query->where('address', 'like', '%' . $filters['address'] . '%');
+        }
+        if (!empty($filters['email'])) {
+            $query->where('email', 'like', '%' . $filters['email'] . '%');
+        }
+        if (!empty($filters['phone'])) {
+            $query->where('phone', 'like', '%' . $filters['phone'] . '%');
+        }
+        if (!empty($filters['opening_balance'])) {
+            $query->where('opening_balance', 'like', '%' . $filters['opening_balance'] . '%');
+        }
+        if (!empty($filters['opening_balance_type'])) {
+            $query->where('opening_balance_type', $filters['opening_balance_type']);
+        }
+        if (!empty($filters['created_by'])) {
+            // search by the name of the user who made the customer
+            $createdBy = $filters['created_by'];
+            $query->whereHas('createdBy', function ($userQuery) use ($createdBy) {
+                $userQuery->where('name', 'like', '%' . $createdBy . '%');
+            });
+        }
+        if (!empty($filters['created_at'])) {
+            $query->whereDate('created_at', date('Y-m-d', strtotime($filters['created_at'])));
+        }
 
-        // Eager load common relations
         $query->with([
             'createdBy:id,name',
             'balanceType:code,name',
@@ -70,118 +88,140 @@ class CustomerService
             'store:id,name',
         ])->orderByDesc('id');
 
-        // Return results
-        return $perPage ? $query->paginate($perPage) : $query->get();
+        if ($perPage) {
+            return $query->paginate($perPage);
+        }
+
+        return $query->get();
     }
 
     public function createCustomer(array $data)
     {
-        return DB::transaction(function () use ($data) {
-            // Generate unique customer code
+        DB::beginTransaction();
+        try {
+            // a new unique customer code, like CUS0001
             $data['code'] = generateCode('CUS', 'customers', 'code');
 
-            // Use the logged in user's company when the form does not send one
-            $data['company_id'] = $data['company_id'] ?? Auth::user()->company_id;
-
-            // Create customer
-            $customer = Customer::create($data);
-
-            // If opening balance exists, insert into customer_ledger
-            if (!empty($customer->opening_balance) && $customer->opening_balance > 0) {
-                CustomerLedger::create([
-                    'customer_id'   => $customer->id,
-                    'company_id'    => $customer->company_id,
-                    'date'          => now(),
-                    'reference'     => 'Opening Balance',
-                    'description'   => 'Opening balance entry for customer',
-                    'debit'         => $customer->opening_balance_type === '1' ? $customer->opening_balance : 0,
-                    'credit'        => $customer->opening_balance_type === '2' ? $customer->opening_balance : 0,
-                    'balance'       => $customer->opening_balance,
-                    'balance_type'  => $customer->opening_balance_type,
-                    'created_by'    => Auth::id(),
-                ]);
+            // the logged in user's company when the form does not send one
+            if (!isset($data['company_id'])) {
+                $data['company_id'] = Auth::user()->company_id;
             }
 
-            return $customer;
-        });
-    }
+            $customer = Customer::create($data);
 
+            // an opening balance is also written in the customer ledger
+            if (!empty($customer->opening_balance) && $customer->opening_balance > 0) {
+                $ledgerData = $this->openingLedgerData(
+                    $customer,
+                    $customer->opening_balance,
+                    $customer->opening_balance_type,
+                    'Opening balance entry for customer'
+                );
+                $ledgerData['created_by'] = Auth::id();
+                CustomerLedger::create($ledgerData);
+            }
+
+            DB::commit();
+            return $customer;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
 
     public function updateCustomer(Customer $customer, array $data)
     {
-        return DB::transaction(function () use ($customer, $data) {
-
-            // Update customer basic info
+        DB::beginTransaction();
+        try {
             $customer->update($data);
 
-            // Check if customer has opening balance
             $hasOpeningBalance = !empty($data['opening_balance']) && $data['opening_balance'] > 0;
-
-            // Try to find existing opening balance ledger entry
-            $existingLedger = CustomerLedger::where('customer_id', $customer->id)
+            $openingLedger = CustomerLedger::where('customer_id', $customer->id)
                 ->where('reference', 'Opening Balance')
                 ->first();
 
-            if ($hasOpeningBalance) {
-                if ($existingLedger) {
-                    // Update existing opening balance ledger
-                    $existingLedger->update([
-                        'date'          => now(),
-                        'company_id'    => $customer->company_id,
-                        'description'   => 'Updated opening balance entry for customer',
-                        'debit'         => $data['opening_balance_type'] == 1 ? $data['opening_balance'] : 0,
-                        'credit'        => $data['opening_balance_type'] == 2 ? $data['opening_balance'] : 0,
-                        'balance'       => $data['opening_balance'],
-                        'balance_type'  => $data['opening_balance_type'],
-                        'updated_by'    => Auth::id(),
-                    ]);
-                } else {
-                    // Create new opening balance ledger
-                    CustomerLedger::create([
-                        'customer_id'   => $customer->id,
-                        'company_id'    => $customer->company_id,
-                        'date'          => now(),
-                        'reference'     => 'Opening Balance',
-                        'description'   => 'Opening balance entry for customer',
-                        'debit'         => $data['opening_balance_type'] == 1 ? $data['opening_balance'] : 0,
-                        'credit'        => $data['opening_balance_type'] == 2 ? $data['opening_balance'] : 0,
-                        'balance'       => $data['opening_balance'],
-                        'balance_type'  => $data['opening_balance_type'],
-                        'created_by'    => Auth::id(),
-                    ]);
-                }
-            } else {
-                // If opening balance is removed, delete existing ledger entry
-                if ($existingLedger) {
-                    $existingLedger->delete();
-                }
+            if ($hasOpeningBalance && $openingLedger) {
+                // the opening balance changed
+                $ledgerData = $this->openingLedgerData(
+                    $customer,
+                    $data['opening_balance'],
+                    $data['opening_balance_type'],
+                    'Updated opening balance entry for customer'
+                );
+                $ledgerData['updated_by'] = Auth::id();
+                unset($ledgerData['customer_id'], $ledgerData['reference']);
+                $openingLedger->update($ledgerData);
+            } elseif ($hasOpeningBalance) {
+                // a new opening balance
+                $ledgerData = $this->openingLedgerData(
+                    $customer,
+                    $data['opening_balance'],
+                    $data['opening_balance_type'],
+                    'Opening balance entry for customer'
+                );
+                $ledgerData['created_by'] = Auth::id();
+                CustomerLedger::create($ledgerData);
+            } elseif ($openingLedger) {
+                // the opening balance was taken away
+                $openingLedger->delete();
             }
 
-            return $customer->fresh(); // return the updated customer with relations if needed
-        });
+            DB::commit();
+            return $customer->fresh();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
+    // The opening balance row of the customer ledger: type 1 = debit, 2 = credit
+    private function openingLedgerData(Customer $customer, $amount, $type, string $description): array
+    {
+        $debit = 0;
+        $credit = 0;
+        if ($type == 1) {
+            $debit = $amount;
+        } elseif ($type == 2) {
+            $credit = $amount;
+        }
 
+        return [
+            'customer_id'  => $customer->id,
+            'company_id'   => $customer->company_id,
+            'date'         => now(),
+            'reference'    => 'Opening Balance',
+            'description'  => $description,
+            'debit'        => $debit,
+            'credit'       => $credit,
+            'balance'      => $amount,
+            'balance_type' => $type,
+        ];
+    }
 
+    // move to trash
     public function softDeleteCustomer(Customer $customer)
     {
         $customer->delete();
     }
 
+    // take back from trash
     public function restoreCustomer(Customer $customer)
     {
         if ($customer->trashed()) {
             $customer->restore();
         }
+
         return $customer;
     }
 
+    // delete for ever; only a customer in the trash can be deleted
     public function forceDeleteCustomer(Customer $customer)
     {
-        if ($customer->trashed()) {
-            $customer->forceDelete();
-            return true;
+        if (!$customer->trashed()) {
+            return false;
         }
-        return false;
+
+        $customer->forceDelete();
+        return true;
     }
 }

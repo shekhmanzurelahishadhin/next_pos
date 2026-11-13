@@ -1,8 +1,5 @@
 import { api } from "@/lib/api";
-
-// Simple in-memory cache
-const cache = new Map();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+import { pickFilters } from "@/lib/options";
 
 export interface Store {
   id: number;
@@ -42,59 +39,19 @@ export interface StoreFilters {
 }
 
 class StoreService {
-  private getCacheKey(filters: StoreFilters): string {
-    return `stores_${JSON.stringify(filters)}`;
-  }
-
-  private setCache(key: string, data: any): void {
-    cache.set(key, {
-      data,
-      timestamp: Date.now()
-    });
-  }
-
-  private getCache(key: string): any {
-    const cached = cache.get(key);
-    // check expiration
-    if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
-      return cached.data;
-    }
-    cache.delete(key); // expired → delete it
-    return null;
-  }
-
   async getStores(filters: StoreFilters = {}): Promise<PaginatedResponse<Store>> {
-    const params = new URLSearchParams();
-
-    // Common filter fields
-    if (filters.search) params.append('search', filters.search);
-    if (filters.page) params.append('page', filters.page.toString());
-    if (filters.per_page) params.append('per_page', filters.per_page.toString());
-
-    // Specific filter fields
-    if (filters.name) params.append('name', filters.name);
-    if (filters.slug) params.append('slug', filters.slug);
-    if (filters.company_name) params.append('company_name', filters.company_name);
-    if (filters.code) params.append('code', filters.code);
-    if (filters.address) params.append('address', filters.address);
-    if (filters.status) params.append('status', filters.status);
-    if (filters.created_at) params.append('created_at', filters.created_at);
-    if (filters.updated_at) params.append('updated_at', filters.updated_at);
-
-    const response = await api.get(`/configure/stores?${params}`);
-    const result = response.data.data;
-
-    return result;
+    // only these filters go to the API, and only when they have a value
+    const params = pickFilters(filters, ['search', 'page', 'per_page', 'name', 'slug', 'company_name', 'code', 'address', 'status', 'created_at', 'updated_at']);
+    const response = await api.get('/configure/stores', { params: params });
+    return response.data.data;
   }
 
   async createStore(storeData: { name: string, company_id: number, code?: string, address?: string }): Promise<Store> {
-
     const response = await api.post('/configure/stores', storeData);
     return response.data.data;
   }
 
   async updateStore(id: number, storeData: { name: string, company_id: number, code?: string, address?: string, status?: string }): Promise<Store> {
-
     const response = await api.put(`/configure/stores/${id}`, storeData);
     return response.data.data;
   }

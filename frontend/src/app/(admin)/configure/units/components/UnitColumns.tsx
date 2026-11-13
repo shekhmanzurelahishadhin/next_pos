@@ -243,5 +243,5 @@ export const useUnitColumns = ({
         );
       },
     },
-  ], [hasPermission, onView, onEdit, handleForceDelete, handleSoftDelete, handleRestore, pageIndex, pageSize]);
+  ], [hasPermission, onView, onEdit, handleForceDelete, handleSoftDelete, handleRestore, pageIndex, pageSize, formatDate, status]);
 };

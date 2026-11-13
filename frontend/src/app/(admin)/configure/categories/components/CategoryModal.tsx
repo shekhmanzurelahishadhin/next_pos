@@ -13,7 +13,7 @@ interface CategoryModalProps {
   saving: boolean;
   onClose: () => void;
   onSave: (categoryData: { name: string }) => void;
-  backendErrors?: Record<string, string>; // Add this prop
+  backendErrors?: Record<string, string>;
   formatDate: (dateString?: string) => string;
 }
 
@@ -25,28 +25,31 @@ export function CategoryModal({
   saving,
   onClose,
   onSave,
-  backendErrors, // Add this prop
+  backendErrors,
   formatDate,
 }: CategoryModalProps) {
-  const getTitle = () => {
-    switch (mode) {
-      case 'view': return 'Category Details';
-      case 'edit': return 'Edit Category';
-      case 'create': return 'Add New Category';
-      default: return 'Category';
-    }
-  };
+  let title = "Add New Category";
+  let modalSize = "max-w-md";
+  if (mode === "view") {
+    title = "Category Details";
+    modalSize = "max-w-2xl";
+  } else if (mode === "edit") {
+    title = "Edit Category";
+  }
 
-  const getModalSize = () => {
-    return mode === 'view' ? 'max-w-2xl' : 'max-w-md';
-  };
+  let submitText = "Create";
+  if (saving) {
+    submitText = "Saving...";
+  } else if (mode === "edit") {
+    submitText = "Update";
+  }
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      className={getModalSize()}
-      title={getTitle()}
+      className={modalSize}
+      title={title}
       footer={
       <>
         {mode === 'view' ? (
@@ -75,7 +78,7 @@ export function CategoryModal({
               size="sm"
               disabled={saving}
             >
-              {saving ? 'Saving...' : (mode === 'edit' ? 'Update' : 'Create')}
+              {submitText}
             </Button>
           </>
         )}
@@ -94,7 +97,7 @@ export function CategoryModal({
             mode={mode}
             saving={saving}
             onSubmit={onSave}
-            backendErrors={backendErrors} // backend errors to form
+            backendErrors={backendErrors}
           />
         )}
       </div>

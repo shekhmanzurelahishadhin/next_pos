@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { removeEmpty } from "@/lib/options";
 
 export interface Product {
   id: number;
@@ -91,14 +92,8 @@ export interface ProductFilters {
 
 class ProductService {
   async getProducts(filters: ProductFilters = {}): Promise<PaginatedResponse<Product>> {
-    const params = new URLSearchParams();
-
     // send every filter that has a value (column filters use the column id as the name)
-    Object.entries(filters).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== '') params.append(key, String(value));
-    });
-
-    const response = await api.get(`/configure/products?${params}`);
+    const response = await api.get('/configure/products', { params: removeEmpty({ ...filters }) });
     return response.data.data;
   }
 

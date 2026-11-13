@@ -14,7 +14,7 @@ interface SupplierModalProps {
   saving: boolean;
   onClose: () => void;
   onSave: (supplierData: { name: string }) => void;
-  backendErrors?: Record<string, string>; // Add this prop
+  backendErrors?: Record<string, string>;
   formatDate: (dateString?: string) => string;
 }
 
@@ -27,28 +27,31 @@ export function SupplierModal({
   saving,
   onClose,
   onSave,
-  backendErrors, // Add this prop
+  backendErrors,
   formatDate,
 }: SupplierModalProps) {
-  const getTitle = () => {
-    switch (mode) {
-      case 'view': return 'Supplier Details';
-      case 'edit': return 'Edit Supplier';
-      case 'create': return 'Add New Supplier';
-      default: return 'Supplier';
-    }
-  };
+  let title = "Add New Supplier";
+  let modalSize = "max-w-md";
+  if (mode === "view") {
+    title = "Supplier Details";
+    modalSize = "max-w-2xl";
+  } else if (mode === "edit") {
+    title = "Edit Supplier";
+  }
 
-  const getModalSize = () => {
-    return mode === 'view' ? 'max-w-2xl' : 'max-w-md';
-  };
+  let submitText = "Create";
+  if (saving) {
+    submitText = "Saving...";
+  } else if (mode === "edit") {
+    submitText = "Update";
+  }
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      className={getModalSize()}
-      title={getTitle()}
+      className={modalSize}
+      title={title}
       footer={
       <>
         {mode === 'view' ? (
@@ -77,7 +80,7 @@ export function SupplierModal({
               size="sm"
               disabled={saving}
             >
-              {saving ? 'Saving...' : (mode === 'edit' ? 'Update' : 'Create')}
+              {submitText}
             </Button>
           </>
         )}
@@ -97,7 +100,7 @@ export function SupplierModal({
             mode={mode}
             saving={saving}
             onSubmit={onSave}
-            backendErrors={backendErrors} // backend errors to form
+            backendErrors={backendErrors}
           />
         )}
       </div>

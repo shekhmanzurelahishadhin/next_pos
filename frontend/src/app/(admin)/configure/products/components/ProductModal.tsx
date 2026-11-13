@@ -33,21 +33,26 @@ export function ProductModal({
   backendErrors,
   formatDate,
 }: ProductModalProps) {
-  const getTitle = () => {
-    switch (mode) {
-      case 'view': return 'Product Details';
-      case 'edit': return 'Edit Product';
-      case 'create': return 'Add New Product';
-      default: return 'Product';
-    }
-  };
+  let title = "Add New Product";
+  if (mode === "view") {
+    title = "Product Details";
+  } else if (mode === "edit") {
+    title = "Edit Product";
+  }
+
+  let submitText = "Create";
+  if (saving) {
+    submitText = "Saving...";
+  } else if (mode === "edit") {
+    submitText = "Update";
+  }
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       className="max-w-3xl"
-      title={getTitle()}
+      title={title}
       footer={
       <>
         {mode === 'view' ? (
@@ -60,7 +65,7 @@ export function ProductModal({
               Cancel
             </Button>
             <Button type="submit" form="product-form" size="sm" disabled={saving}>
-              {saving ? 'Saving...' : (mode === 'edit' ? 'Update' : 'Create')}
+              {submitText}
             </Button>
           </>
         )}

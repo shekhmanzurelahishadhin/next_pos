@@ -33,13 +33,14 @@ export function LocationForm({ status, location, stores, loadingStores, mode, sa
     defaultValues: { name: "", store_id: null, description: "" },
   });
 
-  // Handle backend errors
+  // show the errors the server sent under their fields
   useEffect(() => {
-    if (backendErrors) {
-      clearErrors();
-      Object.entries(backendErrors).forEach(([field, message]) => {
-        setError(field as keyof LocationFormData, { type: 'server', message });
-      });
+    if (!backendErrors) {
+      return;
+    }
+    clearErrors();
+    for (const field in backendErrors) {
+      setError(field as keyof LocationFormData, { type: "server", message: backendErrors[field] });
     }
   }, [backendErrors, setError, clearErrors]);
 

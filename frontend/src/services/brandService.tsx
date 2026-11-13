@@ -1,8 +1,5 @@
 import { api } from "@/lib/api";
-
-// Simple in-memory cache
-const cache = new Map();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+import { pickFilters } from "@/lib/options";
 
 export interface Brand {
   id: number;
@@ -34,57 +31,19 @@ export interface BrandFilters {
 }
 
 class BrandService {
-  private getCacheKey(filters: BrandFilters): string {
-    return `brands_${JSON.stringify(filters)}`;
-  }
-
-  private setCache(key: string, data: any): void {
-    cache.set(key, {
-      data,
-      timestamp: Date.now()
-    });
-  }
-
-  private getCache(key: string): any {
-    const cached = cache.get(key);
-    // check expiration
-    if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
-      return cached.data;
-    }
-    cache.delete(key); // expired → delete it
-    return null;
-  }
-
   async getBrands(filters: BrandFilters = {}): Promise<PaginatedResponse<Brand>> {
-
-    const params = new URLSearchParams();
-
-    // Common filter fields
-    if (filters.search) params.append('search', filters.search);
-    if (filters.page) params.append('page', filters.page.toString());
-    if (filters.per_page) params.append('per_page', filters.per_page.toString());
-
-    // Specific filter fields
-    if (filters.name) params.append('name', filters.name);
-    if (filters.slug) params.append('slug', filters.slug);
-    if (filters.status) params.append('status', filters.status);
-    if (filters.created_at) params.append('created_at', filters.created_at);
-    if (filters.updated_at) params.append('updated_at', filters.updated_at);
-
-    const response = await api.get(`/configure/brands?${params}`);
-    const result = response.data.data;
-
-    return result;
+    // only these filters go to the API, and only when they have a value
+    const params = pickFilters(filters, ['search', 'page', 'per_page', 'name', 'slug', 'status', 'created_at', 'updated_at']);
+    const response = await api.get('/configure/brands', { params: params });
+    return response.data.data;
   }
 
   async createBrand(brandData: { name: string}): Promise<Brand> {
-
     const response = await api.post('/configure/brands', brandData);
     return response.data.data;
   }
 
   async updateBrand(id: number, brandData: { name: string, status: string }): Promise<Brand> {
-
     const response = await api.put(`/configure/brands/${id}`, brandData);
     return response.data.data;
   }

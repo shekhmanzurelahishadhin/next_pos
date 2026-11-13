@@ -1,57 +1,38 @@
-// hooks/useCustomerContacts.ts
-import { formatDate } from '@/lib/format';
-import { useState, useCallback, useEffect } from 'react';
-import { toast } from 'react-toastify';
-import {
-  customerContactService,
-  CustomerContact,
-  CustomerContactFormData,
-  CustomerContactFilters,
-  PaginatedResponse,
-} from '@/services/customerContactService';
-import { useAlert } from '@/hooks/useAlert';
-import { useModal } from '@/hooks/useModal';
-import { useDebounce } from '@/hooks/useDebounce';
+// Customer phone book: the contact list, its filters and the add / edit / view modal
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "react-toastify";
+import { useAlert } from "@/hooks/useAlert";
+import { useModal } from "@/hooks/useModal";
+import { useDebounce } from "@/hooks/useDebounce";
+import { formatDate } from "@/lib/format";
+import { apiErrorMessage, apiFieldErrors } from "@/lib/options";
+import { customerContactService, CustomerContact, CustomerContactFormData } from "@/services/customerContactService";
 
 export const useCustomerContacts = () => {
   const { confirm } = useAlert();
   const { isOpen, openModal, closeModal } = useModal();
 
-  // Data state
   const [contacts, setContacts] = useState<CustomerContact[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Modal state
   const [selectedContact, setSelectedContact] = useState<CustomerContact | null>(null);
-  const [mode, setMode] = useState<'view' | 'edit' | 'create'>('create');
+  const [mode, setMode] = useState<"view" | "edit" | "create">("create");
   const [backendErrors, setBackendErrors] = useState<Record<string, string>>({});
 
-  // Filter and pagination state
   const [filters, setFilters] = useState<Record<string, string | number>>({});
   const debouncedFilters = useDebounce(filters, 300);
-  const [pagination, setPagination] = useState({
-    pageIndex: 0,
-    pageSize: 10,
-  });
-  const [total, setTotal] = useState(0);
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
 
-  // Load contacts
   const loadContacts = useCallback(async () => {
     try {
       setLoading(true);
-      const apiFilters: CustomerContactFilters = {
-        page: pagination.pageIndex + 1,
-        per_page: pagination.pageSize,
-        ...debouncedFilters,
-      };
-
-      const response: PaginatedResponse<CustomerContact> = await customerContactService.getContacts(apiFilters);
+      const response = await customerContactService.getContacts({ ...debouncedFilters, page: pagination.pageIndex + 1, per_page: pagination.pageSize });
       setContacts(response.data);
       setTotal(response.total);
-    } catch (err) {
-      toast.error('Failed to load customer contacts');
-      console.error('Error loading customer contacts:', err);
+    } catch {
+      toast.error("Failed to load customer contacts");
     } finally {
       setLoading(false);
     }
@@ -61,24 +42,23 @@ export const useCustomerContacts = () => {
     loadContacts();
   }, [loadContacts]);
 
-  // Modal operations
   const handleView = useCallback((contact: CustomerContact) => {
     setSelectedContact(contact);
-    setMode('view');
+    setMode("view");
     setBackendErrors({});
     openModal();
   }, [openModal]);
 
   const handleEdit = useCallback((contact: CustomerContact) => {
     setSelectedContact(contact);
-    setMode('edit');
+    setMode("edit");
     setBackendErrors({});
     openModal();
   }, [openModal]);
 
   const handleCreate = useCallback(() => {
     setSelectedContact(null);
-    setMode('create');
+    setMode("create");
     setBackendErrors({});
     openModal();
   }, [openModal]);
@@ -86,50 +66,56 @@ export const useCustomerContacts = () => {
   const handleCloseModal = useCallback(() => {
     closeModal();
     setSelectedContact(null);
-    setMode('create');
+    setMode("create");
     setBackendErrors({});
   }, [closeModal]);
 
-  // CRUD operations
+  // move to trash
   const handleSoftDelete = useCallback(async (id: number) => {
     const result = await confirm({
-      title: 'Move to Trash?',
-      text: 'Are you sure you want to move this contact to trash?',
+      title: "Move to Trash?",
+      text: "Are you sure you want to move this contact to trash?",
     });
-    if (!result.isConfirmed) return;
+    if (!result.isConfirmed) {
+      return;
+    }
 
     try {
       await customerContactService.softDeleteContact(id);
-      toast.success('Contact moved to trash!');
+      toast.success("Contact moved to trash!");
       await loadContacts();
-    } catch (err) {
-      toast.error('Failed to delete contact');
+    } catch {
+      toast.error("Failed to delete contact");
     }
   }, [confirm, loadContacts]);
 
+  // delete for ever (only a contact in the trash)
   const handleForceDelete = useCallback(async (id: number) => {
     const result = await confirm({
-      title: 'Delete Contact?',
-      text: 'Are you sure you want to delete this contact permanently? This action cannot be undone.',
+      title: "Delete Contact?",
+      text: "Are you sure you want to delete this contact permanently? This action cannot be undone.",
     });
-    if (!result.isConfirmed) return;
+    if (!result.isConfirmed) {
+      return;
+    }
 
     try {
       await customerContactService.forceDeleteContact(id);
-      toast.success('Contact deleted successfully!');
+      toast.success("Contact deleted successfully!");
       await loadContacts();
-    } catch (err) {
-      toast.error('Failed to delete contact');
+    } catch {
+      toast.error("Failed to delete contact");
     }
   }, [confirm, loadContacts]);
 
+  // take back from trash
   const handleRestore = useCallback(async (id: number) => {
     try {
       await customerContactService.restoreContact(id);
-      toast.success('Contact restored successfully!');
+      toast.success("Contact restored successfully!");
       await loadContacts();
-    } catch (err) {
-      toast.error('Failed to restore contact');
+    } catch {
+      toast.error("Failed to restore contact");
     }
   }, [loadContacts]);
 
@@ -138,27 +124,26 @@ export const useCustomerContacts = () => {
       setSaving(true);
       setBackendErrors({});
 
-      if (mode === 'edit' && selectedContact) {
+      if (mode === "edit" && selectedContact) {
         await customerContactService.updateContact(selectedContact.id, contactData);
-        toast.success('Contact updated successfully!');
+        toast.success("Contact updated successfully!");
       } else {
         await customerContactService.createContact(contactData);
-        toast.success('Contact created successfully!');
-        setPagination(prev => ({ ...prev, pageIndex: 0 }));
+        toast.success("Contact created successfully!");
+        // a new contact is on the first page
+        setPagination((oldPagination) => ({ ...oldPagination, pageIndex: 0 }));
       }
 
       handleCloseModal();
       await loadContacts();
       return true;
-    } catch (err: any) {
-      if (err?.response?.data?.errors) {
-        const errors: Record<string, string> = {};
-        Object.entries(err.response.data.errors).forEach(([field, messages]) => {
-          errors[field] = Array.isArray(messages) ? messages[0] : (messages as string);
-        });
-        setBackendErrors(errors);
+    } catch (err) {
+      // validation errors are shown under the fields, any other error as a message
+      const fieldErrors = apiFieldErrors(err);
+      if (Object.keys(fieldErrors).length > 0) {
+        setBackendErrors(fieldErrors);
       } else {
-        toast.error(err?.response?.data?.message || 'Failed to save contact');
+        toast.error(apiErrorMessage(err, "Failed to save contact"));
       }
       return false;
     } finally {
@@ -166,20 +151,18 @@ export const useCustomerContacts = () => {
     }
   }, [mode, selectedContact, loadContacts, handleCloseModal]);
 
-  // Filter and search operations
   const handleFilterChange = useCallback((name: string, value: string | number) => {
-    setFilters((prev) => ({ ...prev, [name]: value }));
-    setPagination(prev => ({ ...prev, pageIndex: 0 }));
+    setFilters((oldFilters) => ({ ...oldFilters, [name]: value }));
+    setPagination((oldPagination) => ({ ...oldPagination, pageIndex: 0 }));
   }, []);
 
-  // Export all contacts (no pagination)
-  const exportAllContacts = async () => {
+  // all contacts for the export, without paging
+  async function exportAllContacts() {
     const response = await customerContactService.getContacts({});
     return response.data;
-  };
+  }
 
   return {
-    // State
     contacts,
     loading,
     saving,
@@ -190,7 +173,6 @@ export const useCustomerContacts = () => {
     pagination,
     total,
 
-    // Actions
     setPagination,
     handleView,
     handleEdit,

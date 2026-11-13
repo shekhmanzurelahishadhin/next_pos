@@ -1,4 +1,5 @@
 import { api } from "@/lib/api";
+import { removeEmpty } from "@/lib/options";
 
 export interface CustomerContact {
   id: number;
@@ -42,17 +43,8 @@ export interface CustomerContactFilters {
 
 class CustomerContactService {
   async getContacts(filters: CustomerContactFilters = {}): Promise<PaginatedResponse<CustomerContact>> {
-    const params = new URLSearchParams();
-
-    if (filters.page) params.append('page', filters.page.toString());
-    if (filters.per_page) params.append('per_page', filters.per_page.toString());
-    if (filters.district) params.append('district', filters.district);
-    if (filters.customer_name) params.append('customer_name', filters.customer_name);
-    if (filters.contact) params.append('contact', filters.contact);
-    if (filters.remarks) params.append('remarks', filters.remarks);
-    if (filters.status) params.append('status', filters.status);
-
-    const response = await api.get(`/sales/customers-contacts?${params}`);
+    // only the filled filters go to the API
+    const response = await api.get('/sales/customers-contacts', { params: removeEmpty({ ...filters }) });
     return response.data.data;
   }
 
