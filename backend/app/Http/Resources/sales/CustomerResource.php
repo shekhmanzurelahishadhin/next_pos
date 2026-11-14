@@ -31,6 +31,7 @@ class CustomerResource extends JsonResource
             'fax' => $this->fax,
             'website' => $this->website,
             'car_name' => $this->car_name,
+            'car_no' => $this->car_no,
             'customer_type_id' => $this->customer_type_id,
             'customer_type_name' => $this->customerType?->name,
             'store_id' => $this->store_id,

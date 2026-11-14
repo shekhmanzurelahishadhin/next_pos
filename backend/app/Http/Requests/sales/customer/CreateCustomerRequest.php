@@ -34,6 +34,7 @@ class CreateCustomerRequest extends FormRequest
             'store_id' => 'nullable|exists:stores,id',
             'credit_limit' => 'nullable|numeric|min:0',
             'car_name' => 'nullable|string|max:255',
+            'car_no' => 'nullable|string|max:255',
             'fax' => 'nullable|string|max:50',
             'website' => 'nullable|string|max:255',
         ];

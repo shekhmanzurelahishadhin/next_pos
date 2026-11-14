@@ -255,7 +255,7 @@ class ImportPartsBazar extends Command
                 'store_id' => $this->stores[$row->depot_id] ?? null,
                 'phone' => $phone, 'fax' => $this->clean($row->company_fax),
                 'email' => $this->clean($row->company_email), 'website' => $this->clean($row->company_web),
-                'address' => $address, 'car_name' => $this->clean($row->car_name),
+                'address' => $address, 'car_name' => $this->clean($row->car_name), 'car_no' => $this->clean($row->car_no),
                 'opening_balance' => abs($opening), 'opening_balance_type' => $opening < 0 ? '2' : '1',
                 'credit_limit' => $row->due_limits ?: 0,
                 'status' => 1,

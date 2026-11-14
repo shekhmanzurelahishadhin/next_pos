@@ -19,6 +19,7 @@ interface CustomerFormData {
   store_id?: number | null;
   credit_limit?: number | null;
   car_name?: string;
+  car_no?: string;
   fax?: string;
   website?: string;
   status?: number;
@@ -59,6 +60,7 @@ export function CustomerForm({ status, openingBalanceType, customerTypes, stores
       store_id: null,
       credit_limit: 0,
       car_name: "",
+      car_no: "",
       fax: "",
       website: "",
     }
@@ -90,6 +92,7 @@ export function CustomerForm({ status, openingBalanceType, customerTypes, stores
         store_id: customer?.store_id ?? null,
         credit_limit: Number(customer?.credit_limit ?? 0),
         car_name: customer?.car_name ?? '',
+        car_no: customer?.car_no ?? '',
         fax: customer?.fax ?? '',
         website: customer?.website ?? '',
       });
@@ -106,6 +109,7 @@ export function CustomerForm({ status, openingBalanceType, customerTypes, stores
         store_id: null,
         credit_limit: 0,
         car_name: '',
+        car_no: '',
         fax: '',
         website: '',
       });
@@ -224,6 +228,10 @@ export function CustomerForm({ status, openingBalanceType, customerTypes, stores
         <div>
           <Label htmlFor="car_name">Car Name</Label>
           <Input id="car_name" type="text" placeholder="e.g. Toyota Axio" register={register("car_name")} error={errors.car_name?.message} disabled={saving} />
+        </div>
+        <div>
+          <Label htmlFor="car_no">Car No</Label>
+          <Input id="car_no" type="text" placeholder="e.g. Dhaka Metro Ga-12-3456" register={register("car_no")} error={errors.car_no?.message} disabled={saving} />
         </div>
         <div className="grid grid-cols-1 gap-3 md:col-span-2 md:grid-cols-3">
           <div>

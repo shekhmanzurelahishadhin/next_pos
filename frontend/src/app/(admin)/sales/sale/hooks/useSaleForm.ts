@@ -199,6 +199,7 @@ export const useSaleForm = (editId: number | null) => {
       customer_due: customer.due,
       mobile_no: customer.phone ?? "",
       car_name: customer.car_name ?? old.car_name,
+      car_no: customer.car_no ?? old.car_no,
       due_limit: customer.due_limit,
     }));
   }

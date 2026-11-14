@@ -197,6 +197,22 @@ export interface CustomerLedgerSummaryReport {
   labels: Record<string, string> | [];
 }
 
+export interface CustomerInfoRow {
+  id: number;
+  name: string;
+  phone: string | null;
+  address: string | null;
+  car_name: string | null;
+  car_no: string | null;
+  email: string | null;
+}
+
+export interface CustomerInfoReport {
+  rows: CustomerInfoRow[];
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
 export interface ReportCustomer {
   id: number;
   name: string;
@@ -258,6 +274,17 @@ class ReportService {
 
   async customerLedgerSummary(filters: Record<string, string>): Promise<CustomerLedgerSummaryReport> {
     const res = await api.get("/reports/sales/customer-ledger-summary", { params: filters });
+    return res.data.data;
+  }
+
+  async customerInfo(filters: Record<string, string>): Promise<CustomerInfoReport> {
+    const res = await api.get("/reports/sales/customer-info", { params: filters });
+    return res.data.data;
+  }
+
+  // Car Name & Model or Car No values for the Customer Info Report pickers
+  async searchCarValues(type: "car_name" | "car_no", term: string): Promise<string[]> {
+    const res = await api.get("/reports/sales/customer-info/cars", { params: { type, term } });
     return res.data.data;
   }
 

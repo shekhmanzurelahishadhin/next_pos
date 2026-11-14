@@ -16,6 +16,7 @@ export interface Customer {
     fax?: string;
     website?: string;
     car_name?: string;
+    car_no?: string;
     customer_type_id?: number | null;
     customer_type_name?: string;
     store_id?: number | null;

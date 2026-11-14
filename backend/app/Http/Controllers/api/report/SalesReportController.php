@@ -19,6 +19,7 @@ class SalesReportController extends Controller
         $this->middleware('permission:customer-due-report.view')->only('customerDue');
         $this->middleware('permission:customer-ledger-report.view')->only('customerLedger');
         $this->middleware('permission:customer-ledger-summary-report.view')->only('customerLedgerSummary');
+        $this->middleware('permission:customer-info-report.view')->only('customerInfo', 'searchCarValues');
     }
 
     public function sales(Request $request)
@@ -112,6 +113,29 @@ class SalesReportController extends Controller
         ]);
 
         return ApiResponse::success($this->service->customerLedgerSummary($filters), 'Customer ledger summary report retrieve successfully');
+    }
+
+    public function customerInfo(Request $request)
+    {
+        $filters = $request->validate([
+            'customer_id' => 'nullable|integer',
+            'car_name' => 'nullable|string|max:255',
+            'car_no' => 'nullable|string|max:255',
+        ]);
+
+        return ApiResponse::success($this->service->customerInfo($filters), 'Customer info report retrieve successfully');
+    }
+
+    // picker list of the Customer Info Report: type = car_name or car_no
+    public function searchCarValues(Request $request)
+    {
+        $filters = $request->validate([
+            'type' => 'required|in:car_name,car_no',
+            'term' => 'nullable|string|max:255',
+        ]);
+        $term = $filters['term'] ?? '';
+
+        return ApiResponse::success($this->service->searchCarValues($filters['type'], $term), 'Car list retrieve successfully');
     }
 
     private function receiptFilters(Request $request): array

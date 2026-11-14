@@ -895,6 +895,7 @@ class ModuleMenuPermissionSeeder extends Seeder
             'Customer Due Report' => 'customer-due-report',
             'Customer Ledger Report' => 'customer-ledger-report',
             'Customer Ledger Summary Report' => 'customer-ledger-summary-report',
+            'Customer Info Report' => 'customer-info-report',
         ];
         foreach ($reports as $menuName => $slug) {
             $reportMenu = Menu::updateOrCreate(

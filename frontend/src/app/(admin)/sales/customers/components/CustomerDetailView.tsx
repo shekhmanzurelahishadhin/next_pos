@@ -35,6 +35,7 @@ export function CustomerDetailView({ customer, formatDate }: CustomerDetailViewP
       <DetailRow label="Customer Type" value={customer.customer_type_name ?? "-"} />
       <DetailRow label="Store / Depot" value={customer.store_name ?? "-"} />
       <DetailRow label="Car Name" value={customer.car_name || "-"} />
+      <DetailRow label="Car No" value={customer.car_no || "-"} />
       <DetailRow label="Fax" value={customer.fax || "-"} />
       <DetailRow label="Website" value={customer.website || "-"} />
       <DetailRow label="Credit Limit" value={creditLimit} />

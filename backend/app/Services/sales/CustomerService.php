@@ -24,6 +24,7 @@ class CustomerService
             'fax',
             'website',
             'car_name',
+            'car_no',
             'company_id',
             'customer_type_id',
             'store_id',

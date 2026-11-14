@@ -279,6 +279,8 @@ Route::prefix('v1')->group(function () {
                 Route::get('customer-due', [SalesReportController::class, 'customerDue']);
                 Route::get('customer-ledger', [SalesReportController::class, 'customerLedger']);
                 Route::get('customer-ledger-summary', [SalesReportController::class, 'customerLedgerSummary']);
+                Route::get('customer-info', [SalesReportController::class, 'customerInfo']);
+                Route::get('customer-info/cars', [SalesReportController::class, 'searchCarValues']);
             });
         });
 

@@ -13,6 +13,7 @@ export interface CustomerHit {
   name: string;
   phone?: string | null;
   car_name?: string | null;
+  car_no?: string | null;
   due_limit: number;
   due: number;
 }

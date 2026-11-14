@@ -725,6 +725,74 @@ class SalesReportService
         ];
     }
 
+    // Customer Info Report (parts_bazar customers/customerInfoReportView)
+    // Contact details of the customers: name, contact no, address, car and email.
+    // Car No must match exactly, Car Name & Model can match a part of the name.
+    public function customerInfo(array $filters): array
+    {
+        $query = DB::table('customers')
+            ->whereNull('deleted_at')
+            ->select('id', 'name', 'phone', 'address', 'car_name', 'car_no', 'email');
+
+        // a company user can only see the customers of own company
+        $ownCompanyId = $this->ownCompanyId();
+        if ($ownCompanyId) {
+            $query->where('company_id', $ownCompanyId);
+        }
+
+        if (!empty($filters['customer_id'])) {
+            $query->where('id', $filters['customer_id']);
+        }
+        if (!empty($filters['car_no'])) {
+            $query->where('car_no', $filters['car_no']);
+        }
+        if (!empty($filters['car_name'])) {
+            $query->where('car_name', 'like', '%' . $filters['car_name'] . '%');
+        }
+
+        $rows = $query->orderBy('id')->get();
+
+        $labels = [];
+        if (!empty($filters['customer_id'])) {
+            $labels['Customer'] = $this->name('customers', $filters['customer_id']);
+        }
+        if (!empty($filters['car_name'])) {
+            $labels['Car Name & Model'] = $filters['car_name'];
+        }
+        if (!empty($filters['car_no'])) {
+            $labels['Car No'] = $filters['car_no'];
+        }
+
+        return [
+            'rows' => $rows,
+            'company' => $this->inventoryReports->company($ownCompanyId),
+            'labels' => $labels,
+        ];
+    }
+
+    // Car Name & Model and Car No pickers of the Customer Info Report
+    // (parts_bazar customers/jquery_customerSearchCarModel and jquery_customerSearchCarNo)
+    public function searchCarValues(string $column, string $term): array
+    {
+        $query = DB::table('customers')
+            ->whereNull('deleted_at')
+            ->whereNotNull($column)
+            ->where($column, '<>', '')
+            ->where($column, 'like', '%' . $term . '%');
+
+        $ownCompanyId = $this->ownCompanyId();
+        if ($ownCompanyId) {
+            $query->where('company_id', $ownCompanyId);
+        }
+
+        $values = [];
+        foreach ($query->distinct()->orderBy($column)->limit(20)->pluck($column) as $value) {
+            $values[] = $value;
+        }
+
+        return $values;
+    }
+
     private function findCustomer($customerId)
     {
         $query = DB::table('customers')

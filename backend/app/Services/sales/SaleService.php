@@ -171,7 +171,7 @@ class SaleService
             })
             ->orderBy('name')
             ->limit(20)
-            ->get(['id', 'name', 'phone', 'car_name', 'credit_limit']);
+            ->get(['id', 'name', 'phone', 'car_name', 'car_no', 'credit_limit']);
 
         $result = [];
         foreach ($customers as $customer) {
@@ -180,6 +180,7 @@ class SaleService
                 'name'      => $customer->name,
                 'phone'     => $customer->phone,
                 'car_name'  => $customer->car_name,
+                'car_no'    => $customer->car_no,
                 'due_limit' => (float) $customer->credit_limit,
                 'due'       => $this->customerDue($customer->id),
             ];
