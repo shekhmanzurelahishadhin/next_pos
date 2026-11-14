@@ -7,8 +7,8 @@ import { EyeCloseIcon, EyeIcon } from "@/icons";
 import React, { useState } from "react";
 
 export default function SignInForm() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("admin@local.test");
+  const [password, setPassword] = useState("password");
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);

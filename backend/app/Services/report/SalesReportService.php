@@ -594,6 +594,137 @@ class SalesReportService
         ];
     }
 
+    // Customer Ledger Summary (parts_bazar customers/partyLedgerSummaryViewDateWise)
+    // One row per customer: opening balance, debit and credit between the dates, closing balance.
+    // Same amounts as the Customer Ledger:
+    //   debit  = approved sales + refunds
+    //   credit = returns + money received
+    // Everything before the start date goes into the opening balance.
+    // Customers with nothing to show (all four amounts 0) are left out.
+    public function customerLedgerSummary(array $filters): array
+    {
+        $startDate = $filters['start_date'];
+        $endDate = $filters['end_date'];
+
+        // approved sales of each customer, before the start date and between the dates
+        $salesByCustomer = DB::table('sales')
+            ->whereNull('deleted_at')
+            ->where('status', Sale::APPROVED)
+            ->where('order_date', '<=', $endDate)
+            ->select('customer_id')
+            ->selectRaw('SUM(IF(order_date < ?, grand_total, 0)) AS before_start', [$startDate])
+            ->selectRaw('SUM(IF(order_date < ?, 0, grand_total)) AS in_range', [$startDate])
+            ->groupBy('customer_id');
+
+        // money received from each customer;
+        // an Adjustment MR only moves old advance onto invoices, so its amount is not counted again
+        $receivedAmount = 'IF(received_type = ' . MoneyReceipt::ADJUSTMENT . ', 0, amount) + discount + vds + tds';
+        $receivedByCustomer = DB::table('money_receipts')
+            ->whereNull('deleted_at')
+            ->where('receipt_date', '<=', $endDate)
+            ->select('customer_id')
+            ->selectRaw("SUM(IF(receipt_date < ?, $receivedAmount, 0)) AS before_start", [$startDate])
+            ->selectRaw("SUM(IF(receipt_date < ?, 0, $receivedAmount)) AS in_range", [$startDate])
+            ->groupBy('customer_id');
+
+        // returned and refunded amounts of each customer
+        $returnsByCustomer = DB::table('sale_returns')
+            ->whereNull('deleted_at')
+            ->where('return_date', '<=', $endDate)
+            ->select('customer_id')
+            ->selectRaw('SUM(IF(return_date < ?, total_amount, 0)) AS returned_before_start', [$startDate])
+            ->selectRaw('SUM(IF(return_date < ?, 0, total_amount)) AS returned_in_range', [$startDate])
+            ->selectRaw('SUM(IF(return_date < ?, refund_amount, 0)) AS refunded_before_start', [$startDate])
+            ->selectRaw('SUM(IF(return_date < ?, 0, refund_amount)) AS refunded_in_range', [$startDate])
+            ->groupBy('customer_id');
+
+        $query = DB::table('customers')
+            ->leftJoinSub($salesByCustomer, 'sales_total', 'sales_total.customer_id', '=', 'customers.id')
+            ->leftJoinSub($receivedByCustomer, 'received_total', 'received_total.customer_id', '=', 'customers.id')
+            ->leftJoinSub($returnsByCustomer, 'returns_total', 'returns_total.customer_id', '=', 'customers.id')
+            ->whereNull('customers.deleted_at')
+            ->select(
+                'customers.id',
+                'customers.name as customer_name',
+                'customers.opening_balance',
+                'customers.opening_balance_type',
+                'sales_total.before_start as sales_before_start',
+                'sales_total.in_range as sales_in_range',
+                'received_total.before_start as received_before_start',
+                'received_total.in_range as received_in_range',
+                'returns_total.returned_before_start',
+                'returns_total.returned_in_range',
+                'returns_total.refunded_before_start',
+                'returns_total.refunded_in_range'
+            );
+
+        // a company user can only see the customers of own company
+        $ownCompanyId = $this->ownCompanyId();
+        if ($ownCompanyId) {
+            $query->where('customers.company_id', $ownCompanyId);
+        }
+
+        if (!empty($filters['company_id'])) {
+            $query->where('customers.company_id', $filters['company_id']);
+        }
+        if (!empty($filters['customer_id'])) {
+            $query->where('customers.id', $filters['customer_id']);
+        }
+
+        $customers = $query->orderBy('customers.name')->get();
+
+        $rows = [];
+        foreach ($customers as $customer) {
+            // the customer's own opening balance (type 2 means the customer paid in advance)
+            $opening = (float) $customer->opening_balance;
+            if ($customer->opening_balance_type == '2') {
+                $opening = -$opening;
+            }
+
+            $opening = $opening
+                + (float) $customer->sales_before_start
+                + (float) $customer->refunded_before_start
+                - (float) $customer->returned_before_start
+                - (float) $customer->received_before_start;
+
+            $debit = (float) $customer->sales_in_range + (float) $customer->refunded_in_range;
+            $credit = (float) $customer->returned_in_range + (float) $customer->received_in_range;
+            $closing = $opening + $debit - $credit;
+
+            $opening = round($opening, 2);
+            $debit = round($debit, 2);
+            $credit = round($credit, 2);
+            $closing = round($closing, 2);
+
+            if ($opening == 0 && $debit == 0 && $credit == 0 && $closing == 0) {
+                continue;
+            }
+
+            $rows[] = [
+                'id' => $customer->id,
+                'customer_name' => $customer->customer_name,
+                'opening' => $opening,
+                'debit' => $debit,
+                'credit' => $credit,
+                'closing' => $closing,
+            ];
+        }
+
+        $labels = [];
+        if (!empty($filters['company_id'])) {
+            $labels['Company'] = $this->name('companies', $filters['company_id']);
+        }
+        if (!empty($filters['customer_id'])) {
+            $labels['Customer'] = $this->name('customers', $filters['customer_id']);
+        }
+
+        return [
+            'rows' => $rows,
+            'company' => $this->inventoryReports->company($filters['company_id'] ?? null),
+            'labels' => $labels,
+        ];
+    }
+
     private function findCustomer($customerId)
     {
         $query = DB::table('customers')

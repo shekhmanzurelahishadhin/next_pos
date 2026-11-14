@@ -182,6 +182,21 @@ export interface CustomerLedgerReport {
   labels: Record<string, string> | [];
 }
 
+export interface CustomerLedgerSummaryRow {
+  id: number;
+  customer_name: string;
+  opening: number;
+  debit: number;
+  credit: number;
+  closing: number;
+}
+
+export interface CustomerLedgerSummaryReport {
+  rows: CustomerLedgerSummaryRow[];
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
 export interface ReportCustomer {
   id: number;
   name: string;
@@ -238,6 +253,11 @@ class ReportService {
 
   async customerLedger(filters: Record<string, string>): Promise<CustomerLedgerReport> {
     const res = await api.get("/reports/sales/customer-ledger", { params: filters });
+    return res.data.data;
+  }
+
+  async customerLedgerSummary(filters: Record<string, string>): Promise<CustomerLedgerSummaryReport> {
+    const res = await api.get("/reports/sales/customer-ledger-summary", { params: filters });
     return res.data.data;
   }
 

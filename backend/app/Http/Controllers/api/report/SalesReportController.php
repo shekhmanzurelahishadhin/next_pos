@@ -18,6 +18,7 @@ class SalesReportController extends Controller
         $this->middleware('permission:invoice-wise-collection-report.view')->only('invoiceCollection');
         $this->middleware('permission:customer-due-report.view')->only('customerDue');
         $this->middleware('permission:customer-ledger-report.view')->only('customerLedger');
+        $this->middleware('permission:customer-ledger-summary-report.view')->only('customerLedgerSummary');
     }
 
     public function sales(Request $request)
@@ -99,6 +100,18 @@ class SalesReportController extends Controller
         ]);
 
         return ApiResponse::success($this->service->customerLedger($filters), 'Customer ledger report retrieve successfully');
+    }
+
+    public function customerLedgerSummary(Request $request)
+    {
+        $filters = $request->validate([
+            'start_date' => 'required|date',
+            'end_date' => 'required|date|after_or_equal:start_date',
+            'company_id' => 'nullable|integer',
+            'customer_id' => 'nullable|integer',
+        ]);
+
+        return ApiResponse::success($this->service->customerLedgerSummary($filters), 'Customer ledger summary report retrieve successfully');
     }
 
     private function receiptFilters(Request $request): array
