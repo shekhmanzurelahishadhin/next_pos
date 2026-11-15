@@ -708,6 +708,7 @@ class ModuleMenuPermissionSeeder extends Seeder
         // Purchase reports (view only)
         $purchaseReports = [
             'Purchase Report' => 'purchase-report',
+            'Purchase Summary Report' => 'purchase-summary-report',
         ];
         foreach ($purchaseReports as $menuName => $slug) {
             $reportMenu = Menu::updateOrCreate(

@@ -119,6 +119,84 @@ class PurchaseReportService
         ];
     }
 
+    // Purchase Summary Report (parts_bazar purchaseItems/purchaseSummaryReport)
+    // One row per approved purchase between the dates: order qty, total amount,
+    // what was paid against it and the due.
+    public function purchaseSummary(array $filters): array
+    {
+        // qty and amount of every purchase, from its lines like parts_bazar
+        $linesByPurchase = DB::table('purchase_details')
+            ->whereNull('deleted_at')
+            ->select('purchase_id')
+            ->selectRaw('SUM(qty) AS total_qty')
+            ->selectRaw('SUM(total_purchase_price) AS total_amount')
+            ->groupBy('purchase_id');
+
+        // what was paid against every purchase
+        $paidByPurchase = DB::table('supplier_payments')
+            ->whereNull('deleted_at')
+            ->whereNotNull('purchase_id')
+            ->select('purchase_id')
+            ->selectRaw('SUM(amount) AS paid_amount')
+            ->groupBy('purchase_id');
+
+        $query = DB::table('purchases')
+            ->joinSub($linesByPurchase, 'lines', 'lines.purchase_id', '=', 'purchases.id')
+            ->leftJoinSub($paidByPurchase, 'paid', 'paid.purchase_id', '=', 'purchases.id')
+            ->leftJoin('suppliers', 'suppliers.id', '=', 'purchases.supplier_id')
+            ->whereNull('purchases.deleted_at')
+            ->where('purchases.status', Purchase::APPROVED)
+            ->whereBetween('purchases.purchase_date', [$filters['start_date'], $filters['end_date']])
+            ->select(
+                'purchases.id',
+                'purchases.purchase_date',
+                'purchases.po_no',
+                'purchases.supplier_bill_no',
+                'suppliers.name as supplier_name',
+                'lines.total_qty',
+                'lines.total_amount',
+                'paid.paid_amount'
+            );
+
+        // a company user can only see the purchases of own company
+        $ownCompanyId = $this->inventoryReports->ownCompanyId();
+        if ($ownCompanyId) {
+            $query->where('purchases.company_id', $ownCompanyId);
+        }
+
+        if (!empty($filters['company_id'])) {
+            $query->where('purchases.company_id', $filters['company_id']);
+        }
+        if (!empty($filters['supplier_id'])) {
+            $query->where('purchases.supplier_id', $filters['supplier_id']);
+        }
+
+        $records = $query->orderBy('purchases.po_no')->get();
+
+        $rows = [];
+        foreach ($records as $record) {
+            $record->total_qty = (float) $record->total_qty;
+            $record->total_amount = (float) $record->total_amount;
+            $record->paid_amount = (float) $record->paid_amount;
+            $record->due_amount = $record->total_amount - $record->paid_amount;
+            $rows[] = $record;
+        }
+
+        $labels = [];
+        if (!empty($filters['company_id'])) {
+            $labels['Company'] = $this->name('companies', $filters['company_id']);
+        }
+        if (!empty($filters['supplier_id'])) {
+            $labels['Supplier'] = $this->name('suppliers', $filters['supplier_id']);
+        }
+
+        return [
+            'rows' => $rows,
+            'company' => $this->inventoryReports->company($filters['company_id'] ?? null),
+            'labels' => $labels,
+        ];
+    }
+
     // supplier picker of the report search forms: search by name, phone or code
     public function searchSuppliers(string $term)
     {

@@ -269,6 +269,24 @@ export interface PurchaseReport {
   labels: Record<string, string> | [];
 }
 
+export interface PurchaseSummaryRow {
+  id: number;
+  purchase_date: string;
+  po_no: string;
+  supplier_bill_no: string | null;
+  supplier_name: string | null;
+  total_qty: number;
+  total_amount: number;
+  paid_amount: number;
+  due_amount: number;
+}
+
+export interface PurchaseSummaryReport {
+  rows: PurchaseSummaryRow[];
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
 export interface ReportCustomer {
   id: number;
   name: string;
@@ -295,6 +313,11 @@ class ReportService {
 
   async purchase(filters: Record<string, string>): Promise<PurchaseReport> {
     const res = await api.get("/reports/purchase/purchase", { params: filters });
+    return res.data.data;
+  }
+
+  async purchaseSummary(filters: Record<string, string>): Promise<PurchaseSummaryReport> {
+    const res = await api.get("/reports/purchase/purchase-summary", { params: filters });
     return res.data.data;
   }
 

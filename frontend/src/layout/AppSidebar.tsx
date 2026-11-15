@@ -87,6 +87,7 @@ const navItems: NavItem[] = [
       { group: "Payment", name: "Supplier Payment", path: "/purchases/supplier-payment", requiredPermissions: ["supplier-payment.create"] },
       { group: "Payment", name: "Supplier Payment Manage", path: "/purchases/supplier-payment-manage", requiredPermissions: ["supplier-payment.view", "supplier-payment.create", "supplier-payment.delete"] },
       { group: "Report", name: "Purchase Report", path: "/purchases/report/purchase", requiredPermissions: ["purchase-report.view"] },
+      { group: "Report", name: "Purchase Summary Report", path: "/purchases/report/purchase-summary", requiredPermissions: ["purchase-summary-report.view"] },
     ],
   },
   {
