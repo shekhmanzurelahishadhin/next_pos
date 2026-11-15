@@ -197,6 +197,116 @@ class PurchaseReportService
         ];
     }
 
+    // Purchase Return Report (parts_bazar purchaseReturn/purchaseReturnReport)
+    // One row per product of every purchase return between the dates, with what was
+    // purchased on that PO line. Unit price is the PO line amount / PO line qty, like parts_bazar.
+    public function purchaseReturn(array $filters): array
+    {
+        $query = DB::table('purchase_return_details')
+            ->join('purchase_returns', 'purchase_returns.id', '=', 'purchase_return_details.purchase_return_id')
+            ->join('purchase_details', 'purchase_details.id', '=', 'purchase_return_details.purchase_detail_id')
+            ->join('purchases', 'purchases.id', '=', 'purchase_returns.purchase_id')
+            ->join('products', 'products.id', '=', 'purchase_return_details.product_id')
+            ->leftJoin('suppliers', 'suppliers.id', '=', 'purchase_returns.supplier_id')
+            ->whereNull('purchase_return_details.deleted_at')
+            ->whereNull('purchase_returns.deleted_at')
+            ->whereBetween('purchase_returns.return_date', [$filters['start_date'], $filters['end_date']])
+            ->select(
+                'purchase_returns.id as return_id',
+                'purchase_return_details.purchase_detail_id',
+                'purchase_returns.return_no',
+                'purchase_returns.return_date',
+                'purchases.po_no',
+                'suppliers.name as supplier_name',
+                'products.part_number',
+                'products.name as product_name',
+                'purchase_details.qty as purchase_qty',
+                'purchase_details.total_purchase_price as purchase_amount'
+            )
+            ->selectRaw("GROUP_CONCAT(DISTINCT purchase_return_details.barcode SEPARATOR ', ') AS barcode")
+            ->selectRaw('SUM(purchase_return_details.return_qty) AS return_qty')
+            ->selectRaw('SUM(purchase_return_details.total_price) AS return_amount')
+            ->groupBy(
+                'purchase_returns.id',
+                'purchase_return_details.purchase_detail_id',
+                'purchase_returns.return_no',
+                'purchase_returns.return_date',
+                'purchases.po_no',
+                'suppliers.name',
+                'products.part_number',
+                'products.name',
+                'purchase_details.qty',
+                'purchase_details.total_purchase_price'
+            );
+
+        // a company user can only see the returns of own company
+        $ownCompanyId = $this->inventoryReports->ownCompanyId();
+        if ($ownCompanyId) {
+            $query->where('purchase_returns.company_id', $ownCompanyId);
+        }
+
+        if (!empty($filters['company_id'])) {
+            $query->where('purchase_returns.company_id', $filters['company_id']);
+        }
+        if (!empty($filters['supplier_id'])) {
+            $query->where('purchase_returns.supplier_id', $filters['supplier_id']);
+        }
+        if (!empty($filters['category_id'])) {
+            $query->where('products.product_category_id', $filters['category_id']);
+        }
+        if (!empty($filters['sub_category_id'])) {
+            $query->where('products.sub_category_id', $filters['sub_category_id']);
+        }
+        if (!empty($filters['product_id'])) {
+            $query->where('purchase_return_details.product_id', $filters['product_id']);
+        }
+        if (!empty($filters['barcode'])) {
+            $query->where('purchase_return_details.barcode', $filters['barcode']);
+        }
+
+        $records = $query->orderBy('purchase_returns.return_no')->orderBy('purchase_return_details.purchase_detail_id')->get();
+
+        $rows = [];
+        foreach ($records as $record) {
+            $record->purchase_qty = (float) $record->purchase_qty;
+            $record->purchase_amount = (float) $record->purchase_amount;
+            $record->return_qty = (float) $record->return_qty;
+            $record->return_amount = (float) $record->return_amount;
+
+            $record->unit_price = 0;
+            if ($record->purchase_qty > 0) {
+                $record->unit_price = $record->purchase_amount / $record->purchase_qty;
+            }
+            $rows[] = $record;
+        }
+
+        $labels = [];
+        if (!empty($filters['company_id'])) {
+            $labels['Company'] = $this->name('companies', $filters['company_id']);
+        }
+        if (!empty($filters['category_id'])) {
+            $labels['Category'] = $this->name('categories', $filters['category_id']);
+        }
+        if (!empty($filters['sub_category_id'])) {
+            $labels['Sub-Category'] = $this->name('sub_categories', $filters['sub_category_id']);
+        }
+        if (!empty($filters['product_id'])) {
+            $labels['Item'] = $this->name('products', $filters['product_id']);
+        }
+        if (!empty($filters['supplier_id'])) {
+            $labels['Supplier'] = $this->name('suppliers', $filters['supplier_id']);
+        }
+        if (!empty($filters['barcode'])) {
+            $labels['Barcode'] = $filters['barcode'];
+        }
+
+        return [
+            'rows' => $rows,
+            'company' => $this->inventoryReports->company($filters['company_id'] ?? null),
+            'labels' => $labels,
+        ];
+    }
+
     // supplier picker of the report search forms: search by name, phone or code
     public function searchSuppliers(string $term)
     {

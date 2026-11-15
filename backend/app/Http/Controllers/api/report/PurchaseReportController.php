@@ -13,6 +13,7 @@ class PurchaseReportController extends Controller
     {
         $this->middleware('permission:purchase-report.view')->only('purchase');
         $this->middleware('permission:purchase-summary-report.view')->only('purchaseSummary');
+        $this->middleware('permission:purchase-return-report.view')->only('purchaseReturn');
     }
 
     public function purchase(Request $request)
@@ -40,6 +41,22 @@ class PurchaseReportController extends Controller
         ]);
 
         return ApiResponse::success($this->service->purchaseSummary($filters), 'Purchase summary report retrieve successfully');
+    }
+
+    public function purchaseReturn(Request $request)
+    {
+        $filters = $request->validate([
+            'start_date' => 'required|date',
+            'end_date' => 'required|date|after_or_equal:start_date',
+            'company_id' => 'nullable|integer',
+            'supplier_id' => 'nullable|integer',
+            'category_id' => 'nullable|integer',
+            'sub_category_id' => 'nullable|integer',
+            'product_id' => 'nullable|integer',
+            'barcode' => 'nullable|string|max:255',
+        ]);
+
+        return ApiResponse::success($this->service->purchaseReturn($filters), 'Purchase return report retrieve successfully');
     }
 
     public function searchSuppliers(Request $request)

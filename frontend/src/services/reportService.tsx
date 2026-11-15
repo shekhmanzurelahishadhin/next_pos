@@ -287,6 +287,29 @@ export interface PurchaseSummaryReport {
   labels: Record<string, string> | [];
 }
 
+export interface PurchaseReturnRow {
+  return_id: number;
+  purchase_detail_id: number;
+  return_no: string;
+  return_date: string;
+  po_no: string;
+  supplier_name: string | null;
+  part_number: string;
+  barcode: string | null;
+  product_name: string;
+  purchase_qty: number;
+  unit_price: number;
+  purchase_amount: number;
+  return_qty: number;
+  return_amount: number;
+}
+
+export interface PurchaseReturnReport {
+  rows: PurchaseReturnRow[];
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
 export interface ReportCustomer {
   id: number;
   name: string;
@@ -318,6 +341,11 @@ class ReportService {
 
   async purchaseSummary(filters: Record<string, string>): Promise<PurchaseSummaryReport> {
     const res = await api.get("/reports/purchase/purchase-summary", { params: filters });
+    return res.data.data;
+  }
+
+  async purchaseReturn(filters: Record<string, string>): Promise<PurchaseReturnReport> {
+    const res = await api.get("/reports/purchase/purchase-return", { params: filters });
     return res.data.data;
   }
 
