@@ -44,6 +44,26 @@ export interface ProductStockReport {
   company: ReportCompany | null;
 }
 
+export interface ProductReportRow {
+  id: number;
+  category_name: string | null;
+  sub_category_name: string | null;
+  product_name: string;
+  part_number: string;
+  unit_name: string | null;
+  unit_weight: string | null;
+  alert_qty: number | null;
+  vehicle_brand_name: string | null;
+  supported_models: string | null;
+  engine: string | null;
+  chassis: string | null;
+}
+
+export interface ProductReport {
+  rows: ProductReportRow[];
+  company: ReportCompany | null;
+}
+
 export interface SalesReportRow {
   id: number;
   sale_id: number;
@@ -213,6 +233,42 @@ export interface CustomerInfoReport {
   labels: Record<string, string> | [];
 }
 
+export interface ReportSupplier {
+  id: number;
+  name: string;
+  phone: string | null;
+  code: string | null;
+}
+
+export interface PurchaseReportRow {
+  id: number;
+  purchase_id: number;
+  po_no: string;
+  purchase_date: string;
+  grand_total: number;
+  supplier_name: string | null;
+  store_name: string | null;
+  product_name: string;
+  part_number: string;
+  unit_name: string | null;
+  barcode: string | null;
+  qty: number;
+  weight_unit: number;
+  total_weight: number;
+  per_kg: number;
+  total_weight_amount: number;
+  unit_price: number;
+  total_unit_price: number;
+  total_product_price: number;
+  total_purchase_price: number;
+}
+
+export interface PurchaseReport {
+  rows: PurchaseReportRow[];
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
 export interface ReportCustomer {
   id: number;
   name: string;
@@ -229,6 +285,16 @@ export interface ReportProduct {
 class ReportService {
   async searchProducts(term: string): Promise<ReportProduct[]> {
     const res = await api.get("/reports/search-products", { params: { term } });
+    return res.data.data;
+  }
+
+  async searchSuppliers(term: string): Promise<ReportSupplier[]> {
+    const res = await api.get("/reports/search-suppliers", { params: { term } });
+    return res.data.data;
+  }
+
+  async purchase(filters: Record<string, string>): Promise<PurchaseReport> {
+    const res = await api.get("/reports/purchase/purchase", { params: filters });
     return res.data.data;
   }
 
@@ -297,6 +363,11 @@ class ReportService {
   // Alert Quantity Report and Out Of Stock Report
   async productStockReport(kind: "alert-qty" | "out-of-stock", filters: Record<string, string>): Promise<ProductStockReport> {
     const res = await api.get(`/reports/inventory/${kind}`, { params: filters });
+    return res.data.data;
+  }
+
+  async productReport(filters: Record<string, string>): Promise<ProductReport> {
+    const res = await api.get("/reports/configure/products", { params: filters });
     return res.data.data;
   }
 }

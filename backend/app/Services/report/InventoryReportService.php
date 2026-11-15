@@ -196,6 +196,56 @@ class InventoryReportService
         return $query;
     }
 
+    // Product Report (parts_bazar prodModels/allProductReport)
+    // Every product with its category, unit, weight, alert qty, vehicle brand,
+    // supported car models, engine and chassis. Sorted by product name.
+    public function productReport(array $filters): array
+    {
+        $query = DB::table('products')
+            ->leftJoin('categories', 'categories.id', '=', 'products.product_category_id')
+            ->leftJoin('sub_categories', 'sub_categories.id', '=', 'products.sub_category_id')
+            ->leftJoin('units', 'units.id', '=', 'products.unit_id')
+            ->leftJoin('lookups as vehicle_brands', 'vehicle_brands.id', '=', 'products.vehicle_brand_id')
+            ->whereNull('products.deleted_at')
+            ->select(
+                'products.id',
+                'categories.name as category_name',
+                'sub_categories.name as sub_category_name',
+                'products.name as product_name',
+                'products.part_number',
+                'units.name as unit_name',
+                'products.unit_weight',
+                'products.alert_qty',
+                'vehicle_brands.name as vehicle_brand_name',
+                'products.supported_models',
+                'products.engine',
+                'products.chassis'
+            );
+
+        // a company user sees own products and the products with no company
+        $ownCompanyId = $this->ownCompanyId();
+        if ($ownCompanyId) {
+            $query->where(function ($where) use ($ownCompanyId) {
+                $where->where('products.company_id', $ownCompanyId)->orWhereNull('products.company_id');
+            });
+        }
+
+        if (!empty($filters['category_id'])) {
+            $query->where('products.product_category_id', $filters['category_id']);
+        }
+        if (!empty($filters['sub_category_id'])) {
+            $query->where('products.sub_category_id', $filters['sub_category_id']);
+        }
+        if (!empty($filters['product_id'])) {
+            $query->where('products.id', $filters['product_id']);
+        }
+        if (!empty($filters['part_number'])) {
+            $query->where('products.part_number', $filters['part_number']);
+        }
+
+        return $query->orderBy('products.name')->get()->all();
+    }
+
     // closing stock (all stock in - all stock out) of every product
     private function closingStockByProduct()
     {

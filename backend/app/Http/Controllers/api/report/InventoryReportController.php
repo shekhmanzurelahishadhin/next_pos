@@ -15,6 +15,7 @@ class InventoryReportController extends Controller
         $this->middleware('permission:stock-amount-report.view')->only('stockAmount');
         $this->middleware('permission:alert-qty-report.view')->only('alertQty');
         $this->middleware('permission:out-of-stock-report.view')->only('outOfStock');
+        $this->middleware('permission:product-report.view')->only('productReport');
     }
 
     public function stockQty(Request $request)
@@ -62,6 +63,21 @@ class InventoryReportController extends Controller
             'rows' => $this->service->outOfStock($filters),
             'company' => $this->service->company($filters['company_id'] ?? null),
         ], 'Out of stock report retrieve successfully');
+    }
+
+    public function productReport(Request $request)
+    {
+        $filters = $request->validate([
+            'category_id' => 'nullable|integer',
+            'sub_category_id' => 'nullable|integer',
+            'product_id' => 'nullable|integer',
+            'part_number' => 'nullable|string|max:255',
+        ]);
+
+        return ApiResponse::success([
+            'rows' => $this->service->productReport($filters),
+            'company' => $this->service->company(),
+        ], 'Product report retrieve successfully');
     }
 
     private function productFilterRules(): array

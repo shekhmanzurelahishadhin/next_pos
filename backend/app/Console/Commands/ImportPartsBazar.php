@@ -199,7 +199,8 @@ class ImportPartsBazar extends Command
                 'sub_category_id'     => $this->subCategories[$row->brand_id] ?? null,
                 'brand_id'            => $brandId,
                 'unit_id'             => $this->units[$row->unit_id] ?? null,
-                'min_order_qty'       => $row->min_order_qty,
+                // parts_bazar keeps the Alert QTY in prod_models.min_order_qty
+                'alert_qty'           => $row->min_order_qty,
                 'short_list_qty'      => $row->short_list_qty,
                 'warranty'            => $row->warranty,
                 'features'            => $row->features,

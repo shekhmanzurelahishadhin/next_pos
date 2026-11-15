@@ -26,6 +26,7 @@ use App\Http\Controllers\api\inventory\StockTransferController;
 use App\Http\Controllers\api\inventory\InventoryAuditController;
 use App\Http\Controllers\api\report\InventoryReportController;
 use App\Http\Controllers\api\report\SalesReportController;
+use App\Http\Controllers\api\report\PurchaseReportController;
 use App\Http\Controllers\api\sales\CustomerController;
 use App\Http\Controllers\api\sales\CustomersContactController;
 use App\Http\Controllers\api\sales\SellPriceController;
@@ -269,7 +270,12 @@ Route::prefix('v1')->group(function () {
                 Route::get('alert-qty', [InventoryReportController::class, 'alertQty']);
                 Route::get('out-of-stock', [InventoryReportController::class, 'outOfStock']);
             });
+            Route::get('configure/products', [InventoryReportController::class, 'productReport']);
             Route::get('search-customers', [SalesReportController::class, 'searchCustomers']);
+            Route::get('search-suppliers', [PurchaseReportController::class, 'searchSuppliers']);
+            Route::prefix('purchase')->group(function () {
+                Route::get('purchase', [PurchaseReportController::class, 'purchase']);
+            });
             Route::prefix('sales')->group(function () {
                 Route::get('sales', [SalesReportController::class, 'sales']);
                 Route::get('sales-summary', [SalesReportController::class, 'salesSummary']);

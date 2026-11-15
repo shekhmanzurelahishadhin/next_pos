@@ -1,7 +1,7 @@
 "use client";
 // Pickers used by many report search forms: type 2+ letters, pick one, the id goes to the form
 import Autocomplete from "@/components/form/Autocomplete";
-import { reportService, ReportCustomer, ReportProduct } from "@/services/reportService";
+import { reportService, ReportCustomer, ReportProduct, ReportSupplier } from "@/services/reportService";
 
 interface PickerProps {
   text: string;
@@ -22,6 +22,23 @@ export function ProductPicker({ text, onText, onPick }: PickerProps) {
         </span>
       )}
       placeholder="Name or part number"
+    />
+  );
+}
+
+export function SupplierPicker({ text, onText, onPick }: PickerProps) {
+  return (
+    <Autocomplete<ReportSupplier>
+      value={text}
+      onChange={onText}
+      search={(term) => reportService.searchSuppliers(term)}
+      onSelect={(s) => onPick(String(s.id), s.name)}
+      renderItem={(s) => (
+        <span>
+          {s.name} <span className="text-gray-400">· {s.phone || s.code}</span>
+        </span>
+      )}
+      placeholder="Name, phone or code"
     />
   );
 }

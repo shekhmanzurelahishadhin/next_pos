@@ -598,6 +598,20 @@ class ModuleMenuPermissionSeeder extends Seeder
             ]
         );
 
+        // Product Report (view only)
+        $productReportMenu = Menu::updateOrCreate(
+            ['name' => 'Product Report', 'module_id' => $softConfigModule->id],
+            ['slug' => 'product-report']
+        );
+        Permission::updateOrCreate(
+            ['name' => 'product-report.view', 'guard_name' => 'web'],
+            [
+                'module_id'   => $softConfigModule->id,
+                'menu_id'     => $productReportMenu->id,
+                'sub_menu_id' => null,
+            ]
+        );
+
         // Purchase module
         $purchaseModule = Module::updateOrCreate(
             ['name' => 'Purchase'],
@@ -686,6 +700,25 @@ class ModuleMenuPermissionSeeder extends Seeder
                 [
                     'module_id'   => $purchaseModule->id,
                     'menu_id'     => $supplierPaymentMenu->id,
+                    'sub_menu_id' => null,
+                ]
+            );
+        }
+
+        // Purchase reports (view only)
+        $purchaseReports = [
+            'Purchase Report' => 'purchase-report',
+        ];
+        foreach ($purchaseReports as $menuName => $slug) {
+            $reportMenu = Menu::updateOrCreate(
+                ['name' => $menuName, 'module_id' => $purchaseModule->id],
+                ['slug' => $slug]
+            );
+            Permission::updateOrCreate(
+                ['name' => "{$slug}.view", 'guard_name' => 'web'],
+                [
+                    'module_id'   => $purchaseModule->id,
+                    'menu_id'     => $reportMenu->id,
                     'sub_menu_id' => null,
                 ]
             );

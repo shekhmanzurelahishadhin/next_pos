@@ -406,6 +406,55 @@
 .flatpickr-months .flatpickr-next-month {
   @apply !top-2.5 dark:!fill-white dark:!text-white !bg-transparent;
 }
+
+/* month and year dropdowns of the calendar: small boxes side by side */
+.flatpickr-current-month {
+  @apply !flex !items-center !justify-center !gap-1.5;
+}
+.flatpickr-month .flatpickr-current-month .flatpickr-monthDropdown-months,
+.flatpickr-current-month .flatpickr-yearDropdown {
+  @apply !m-0 !h-7 cursor-pointer !rounded-md !border !border-gray-300 !py-0 !pl-2 !pr-1 !text-sm !font-medium !text-gray-800 hover:!border-brand-300 dark:!border-gray-700 dark:!bg-gray-900 dark:!text-white/90;
+  appearance: auto !important;
+}
+/* dark list in the open month dropdown */
+.dark .flatpickr-current-month .flatpickr-monthDropdown-months {
+  color-scheme: dark;
+}
+.dark .flatpickr-current-month .flatpickr-monthDropdown-months option {
+  @apply !bg-gray-900 !text-white/90;
+}
+/* year button and its list of years (made in date-picker.tsx) */
+.flatpickr-months .flatpickr-month {
+  overflow: visible !important;
+}
+/* keep the month row (and the open year list) above the days */
+.flatpickr-calendar .flatpickr-months {
+  @apply relative z-10;
+}
+.flatpickr-yearPicker {
+  @apply relative;
+}
+.flatpickr-current-month .flatpickr-yearDropdown {
+  @apply inline-flex items-center gap-1 !pr-2 bg-white;
+}
+.flatpickr-current-month .flatpickr-yearDropdown::after {
+  content: "";
+  @apply size-0 border-x-4 border-t-4 border-x-transparent border-t-current opacity-70;
+}
+.flatpickr-yearList {
+  @apply absolute left-1/2 top-8 z-50 max-h-52 w-20 -translate-x-1/2 overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-theme-lg dark:border-gray-700 dark:bg-gray-900;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-gray-300) transparent;
+}
+.dark .flatpickr-yearList {
+  scrollbar-color: var(--color-gray-700) transparent;
+}
+.flatpickr-yearItem {
+  @apply cursor-pointer px-2 py-1 text-center text-sm font-normal text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5;
+}
+.flatpickr-yearItem.selected {
+  @apply bg-brand-500 font-medium text-white hover:bg-brand-500 dark:text-white dark:hover:bg-brand-500;
+}
 .flatpickr-months .flatpickr-prev-month.flatpickr-prev-month,
 .flatpickr-months .flatpickr-next-month.flatpickr-prev-month {
   @apply !left-3;

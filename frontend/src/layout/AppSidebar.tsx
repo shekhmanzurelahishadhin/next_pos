@@ -66,6 +66,7 @@ const navItems: NavItem[] = [
       { group: "Product", name: "Units", path: "/configure/units", requiredPermissions: ["unit.view", "unit.create", "unit.edit", "unit.delete"] },
       { group: "Product", name: "Brands", path: "/configure/brands", requiredPermissions: ["brand.view", "brand.create", "brand.edit", "brand.delete"] },
       { group: "Product", name: "Products", path: "/configure/products", requiredPermissions: ["product.view", "product.create", "product.edit", "product.delete"] },
+      { group: "Report", name: "Product Report", path: "/configure/product-report", requiredPermissions: ["product-report.view"] },
       { group: "Pricing", name: "PP/SP Setup", path: "/configure/pp-sp-setup", requiredPermissions: ["pp-sp-setup.view", "pp-sp-setup.create", "pp-sp-setup.edit", "pp-sp-setup.delete"] },
       { group: "Pricing", name: "Purchase Price", path: "/configure/purchase-price", requiredPermissions: ["purchase-price.view", "purchase-price.create"] },
       { group: "Pricing", name: "Sale Price", path: "/configure/sale-price", requiredPermissions: ["sell-price.view", "sell-price.create"] },
@@ -85,6 +86,7 @@ const navItems: NavItem[] = [
       { group: "Return", name: "Purchase Return Manage", path: "/purchases/return-manage", requiredPermissions: ["purchase-return.view", "purchase-return.create", "purchase-return.delete"] },
       { group: "Payment", name: "Supplier Payment", path: "/purchases/supplier-payment", requiredPermissions: ["supplier-payment.create"] },
       { group: "Payment", name: "Supplier Payment Manage", path: "/purchases/supplier-payment-manage", requiredPermissions: ["supplier-payment.view", "supplier-payment.create", "supplier-payment.delete"] },
+      { group: "Report", name: "Purchase Report", path: "/purchases/report/purchase", requiredPermissions: ["purchase-report.view"] },
     ],
   },
   {
