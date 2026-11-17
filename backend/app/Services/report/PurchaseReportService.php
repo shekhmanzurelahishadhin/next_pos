@@ -488,6 +488,152 @@ class PurchaseReportService
         ];
     }
 
+    // Supplier Ledger Summary (parts_bazar suppliers/partyLedgerSummaryViewDateWise)
+    // One row per supplier: opening balance, debit and credit between the dates, closing balance.
+    // Same amounts as the Supplier Ledger:
+    //   credit = approved purchases + refunds
+    //   debit  = returns + payments
+    // Everything before the start date goes into the opening balance.
+    // Suppliers with nothing to show (all four amounts 0) are left out.
+    public function supplierLedgerSummary(array $filters): array
+    {
+        $startDate = $filters['start_date'];
+        $endDate = $filters['end_date'];
+
+        // a company user only sees the transactions of own company
+        $companyId = null;
+        if (!empty($filters['company_id'])) {
+            $companyId = $filters['company_id'];
+        }
+        $ownCompanyId = $this->inventoryReports->ownCompanyId();
+        if ($ownCompanyId) {
+            $companyId = $ownCompanyId;
+        }
+
+        // approved purchases of each supplier, before the start date and between the dates
+        $purchasesBySupplier = DB::table('purchases')
+            ->whereNull('deleted_at')
+            ->where('status', Purchase::APPROVED)
+            ->where('purchase_date', '<=', $endDate)
+            ->select('supplier_id')
+            ->selectRaw('SUM(IF(purchase_date < ?, grand_total, 0)) AS before_start', [$startDate])
+            ->selectRaw('SUM(IF(purchase_date < ?, 0, grand_total)) AS in_range', [$startDate])
+            ->groupBy('supplier_id');
+        if ($companyId) {
+            $purchasesBySupplier->where('company_id', $companyId);
+        }
+
+        // returned and refunded amounts of each supplier
+        $returnsBySupplier = DB::table('purchase_returns')
+            ->whereNull('deleted_at')
+            ->where('return_date', '<=', $endDate)
+            ->select('supplier_id')
+            ->selectRaw('SUM(IF(return_date < ?, total_amount, 0)) AS returned_before_start', [$startDate])
+            ->selectRaw('SUM(IF(return_date < ?, 0, total_amount)) AS returned_in_range', [$startDate])
+            ->selectRaw('SUM(IF(return_date < ?, refund_amount, 0)) AS refunded_before_start', [$startDate])
+            ->selectRaw('SUM(IF(return_date < ?, 0, refund_amount)) AS refunded_in_range', [$startDate])
+            ->groupBy('supplier_id');
+        if ($companyId) {
+            $returnsBySupplier->where('company_id', $companyId);
+        }
+
+        // money paid to each supplier;
+        // an Adjustment payment only moves old advance onto POs, so only its discount counts
+        $paidAmount = 'IF(payment_type = ' . SupplierPayment::ADJUSTMENT . ', 0, amount) + discount';
+        $paymentsBySupplier = DB::table('supplier_payments')
+            ->whereNull('deleted_at')
+            ->where('payment_date', '<=', $endDate)
+            ->select('supplier_id')
+            ->selectRaw("SUM(IF(payment_date < ?, $paidAmount, 0)) AS before_start", [$startDate])
+            ->selectRaw("SUM(IF(payment_date < ?, 0, $paidAmount)) AS in_range", [$startDate])
+            ->groupBy('supplier_id');
+        if ($companyId) {
+            // the advance line of a PR has no company, so pick the PRs that have a line of this company
+            $prsOfCompany = DB::table('supplier_payments')
+                ->whereNull('deleted_at')
+                ->where('company_id', $companyId)
+                ->select('sl_no');
+            $paymentsBySupplier->whereIn('sl_no', $prsOfCompany);
+        }
+
+        $query = DB::table('suppliers')
+            ->leftJoinSub($purchasesBySupplier, 'purchase_total', 'purchase_total.supplier_id', '=', 'suppliers.id')
+            ->leftJoinSub($returnsBySupplier, 'returns_total', 'returns_total.supplier_id', '=', 'suppliers.id')
+            ->leftJoinSub($paymentsBySupplier, 'paid_total', 'paid_total.supplier_id', '=', 'suppliers.id')
+            ->whereNull('suppliers.deleted_at')
+            ->select(
+                'suppliers.id',
+                'suppliers.name as supplier_name',
+                'suppliers.opening_balance',
+                'suppliers.opening_balance_type',
+                'purchase_total.before_start as purchases_before_start',
+                'purchase_total.in_range as purchases_in_range',
+                'paid_total.before_start as paid_before_start',
+                'paid_total.in_range as paid_in_range',
+                'returns_total.returned_before_start',
+                'returns_total.returned_in_range',
+                'returns_total.refunded_before_start',
+                'returns_total.refunded_in_range'
+            );
+
+        if (!empty($filters['supplier_id'])) {
+            $query->where('suppliers.id', $filters['supplier_id']);
+        }
+
+        $suppliers = $query->orderBy('suppliers.name')->get();
+
+        $rows = [];
+        foreach ($suppliers as $supplier) {
+            // the supplier's own opening balance (type 2 means we owe the supplier, type 1 means the supplier owes us)
+            $opening = (float) $supplier->opening_balance;
+            if ($supplier->opening_balance_type != '2') {
+                $opening = -$opening;
+            }
+
+            $opening = $opening
+                + (float) $supplier->purchases_before_start
+                + (float) $supplier->refunded_before_start
+                - (float) $supplier->returned_before_start
+                - (float) $supplier->paid_before_start;
+
+            $debit = (float) $supplier->returned_in_range + (float) $supplier->paid_in_range;
+            $credit = (float) $supplier->purchases_in_range + (float) $supplier->refunded_in_range;
+            $closing = $opening + $credit - $debit;
+
+            $opening = round($opening, 2);
+            $debit = round($debit, 2);
+            $credit = round($credit, 2);
+            $closing = round($closing, 2);
+
+            if ($opening == 0 && $debit == 0 && $credit == 0 && $closing == 0) {
+                continue;
+            }
+
+            $rows[] = [
+                'id' => $supplier->id,
+                'supplier_name' => $supplier->supplier_name,
+                'opening' => $opening,
+                'debit' => $debit,
+                'credit' => $credit,
+                'closing' => $closing,
+            ];
+        }
+
+        $labels = [];
+        if (!empty($filters['company_id'])) {
+            $labels['Company'] = $this->name('companies', $filters['company_id']);
+        }
+        if (!empty($filters['supplier_id'])) {
+            $labels['Supplier'] = $this->name('suppliers', $filters['supplier_id']);
+        }
+
+        return [
+            'rows' => $rows,
+            'company' => $this->inventoryReports->company($companyId),
+            'labels' => $labels,
+        ];
+    }
+
     // All ledger lines of a supplier up to the date, oldest first.
     // Credit increases what we owe the supplier, debit decreases it.
     // $companyId: only the transactions of this company (null = all)

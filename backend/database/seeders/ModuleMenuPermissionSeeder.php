@@ -712,6 +712,7 @@ class ModuleMenuPermissionSeeder extends Seeder
             'Purchase Return Report' => 'purchase-return-report',
             'Payment Report' => 'payment-report',
             'Supplier (Ledger)' => 'supplier-ledger-report',
+            'Supplier (Ledger) Summary' => 'supplier-ledger-summary-report',
         ];
         foreach ($purchaseReports as $menuName => $slug) {
             $reportMenu = Menu::updateOrCreate(

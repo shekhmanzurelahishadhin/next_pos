@@ -347,6 +347,21 @@ export interface SupplierLedgerReport {
   labels: Record<string, string> | [];
 }
 
+export interface SupplierLedgerSummaryRow {
+  id: number;
+  supplier_name: string;
+  opening: number;
+  debit: number;
+  credit: number;
+  closing: number;
+}
+
+export interface SupplierLedgerSummaryReport {
+  rows: SupplierLedgerSummaryRow[];
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
 export interface ReportCustomer {
   id: number;
   name: string;
@@ -393,6 +408,11 @@ class ReportService {
 
   async supplierLedger(filters: Record<string, string>): Promise<SupplierLedgerReport> {
     const res = await api.get("/reports/purchase/supplier-ledger", { params: filters });
+    return res.data.data;
+  }
+
+  async supplierLedgerSummary(filters: Record<string, string>): Promise<SupplierLedgerSummaryReport> {
+    const res = await api.get("/reports/purchase/supplier-ledger-summary", { params: filters });
     return res.data.data;
   }
 
