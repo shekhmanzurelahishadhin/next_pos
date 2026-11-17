@@ -310,6 +310,43 @@ export interface PurchaseReturnReport {
   labels: Record<string, string> | [];
 }
 
+export interface PaymentRow {
+  sl_no: string;
+  payment_date: string;
+  payment_type: string | null;
+  bank_name: string | null;
+  supplier_name: string | null;
+  barcode: string | null;
+  payment_amount: number;
+  discount: number;
+  total_amount: number;
+}
+
+export interface PaymentReport {
+  rows: PaymentRow[];
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
+export interface SupplierLedgerRow {
+  id: number;
+  date: string;
+  type: "Purchase" | "Return" | "Refund" | "Payment";
+  head: string;
+  bill_no: string | null;
+  debit: number;
+  credit: number;
+  balance: number;
+}
+
+export interface SupplierLedgerReport {
+  rows: SupplierLedgerRow[];
+  opening: number;
+  supplier: { id: number; name: string; code: string | null; phone: string | null; address: string | null };
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
 export interface ReportCustomer {
   id: number;
   name: string;
@@ -346,6 +383,16 @@ class ReportService {
 
   async purchaseReturn(filters: Record<string, string>): Promise<PurchaseReturnReport> {
     const res = await api.get("/reports/purchase/purchase-return", { params: filters });
+    return res.data.data;
+  }
+
+  async payment(filters: Record<string, string>): Promise<PaymentReport> {
+    const res = await api.get("/reports/purchase/payment", { params: filters });
+    return res.data.data;
+  }
+
+  async supplierLedger(filters: Record<string, string>): Promise<SupplierLedgerReport> {
+    const res = await api.get("/reports/purchase/supplier-ledger", { params: filters });
     return res.data.data;
   }
 

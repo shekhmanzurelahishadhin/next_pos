@@ -3,6 +3,7 @@
 namespace App\Services\report;
 
 use App\Models\purchase\Purchase;
+use App\Models\purchase\SupplierPayment;
 use Illuminate\Support\Facades\DB;
 
 // Purchase reports like parts_bazar purchaseItems/*Report
@@ -307,7 +308,317 @@ class PurchaseReportService
         ];
     }
 
+    // Payment Report (parts_bazar paymentReceipt/paymentReport)
+    // One row per supplier payment (PR no) between the dates, newest first.
+    // A PR has one line per PO it pays, so the lines of one PR are added up.
+    // Barcodes are the barcodes received on the POs of the PR.
+    public function payment(array $filters): array
+    {
+        // barcodes received on the POs of every PR no
+        $barcodesByPr = DB::table('supplier_payments')
+            ->join('inventory_barcodes', function ($join) {
+                $join->on('inventory_barcodes.entry_no', '=', 'supplier_payments.po_no')
+                    ->where('inventory_barcodes.entry_point', 'purchase');
+            })
+            ->whereNull('supplier_payments.deleted_at')
+            ->select('supplier_payments.sl_no')
+            ->selectRaw("GROUP_CONCAT(DISTINCT inventory_barcodes.barcode SEPARATOR ', ') AS barcode")
+            ->groupBy('supplier_payments.sl_no');
+
+        $query = DB::table('supplier_payments')
+            ->leftJoin('suppliers', 'suppliers.id', '=', 'supplier_payments.supplier_id')
+            ->leftJoinSub($barcodesByPr, 'pr_barcodes', 'pr_barcodes.sl_no', '=', 'supplier_payments.sl_no')
+            ->whereNull('supplier_payments.deleted_at')
+            ->whereBetween('supplier_payments.payment_date', [$filters['start_date'], $filters['end_date']])
+            ->select('supplier_payments.sl_no')
+            ->selectRaw('MIN(supplier_payments.payment_date) AS payment_date')
+            ->selectRaw('MIN(supplier_payments.payment_type) AS payment_type')
+            ->selectRaw('MIN(supplier_payments.bank_name) AS bank_name')
+            ->selectRaw('MIN(suppliers.name) AS supplier_name')
+            ->selectRaw('MIN(pr_barcodes.barcode) AS barcode')
+            ->selectRaw('SUM(supplier_payments.amount) AS payment_amount')
+            ->selectRaw('SUM(supplier_payments.discount) AS discount')
+            ->groupBy('supplier_payments.sl_no');
+
+        // a company user can only see the payments of own company
+        // (the advance line of a PR has no company, so the company of the PR is the one on its PO lines)
+        $ownCompanyId = $this->inventoryReports->ownCompanyId();
+        if ($ownCompanyId) {
+            $query->havingRaw('MAX(supplier_payments.company_id) = ?', [$ownCompanyId]);
+        }
+
+        if (!empty($filters['company_id'])) {
+            $query->havingRaw('MAX(supplier_payments.company_id) = ?', [$filters['company_id']]);
+        }
+
+        // no type picked: all types but Adjustment, which only moves old advance onto POs
+        if (!empty($filters['payment_type'])) {
+            if ($filters['payment_type'] == SupplierPayment::CASH) {
+                $query->where(function ($where) {
+                    $where->where('supplier_payments.payment_type', SupplierPayment::CASH)
+                        ->orWhereNull('supplier_payments.payment_type');
+                });
+            } else {
+                $query->where('supplier_payments.payment_type', $filters['payment_type']);
+            }
+        } else {
+            $query->where(function ($where) {
+                $where->where('supplier_payments.payment_type', '<>', SupplierPayment::ADJUSTMENT)
+                    ->orWhereNull('supplier_payments.payment_type');
+            });
+        }
+
+        if (!empty($filters['bank_name'])) {
+            $query->where('supplier_payments.bank_name', $filters['bank_name']);
+        }
+        if (!empty($filters['supplier_id'])) {
+            $query->where('supplier_payments.supplier_id', $filters['supplier_id']);
+        }
+
+        // PRs that paid a PO which received this barcode
+        if (!empty($filters['barcode'])) {
+            $prsOfBarcode = DB::table('supplier_payments')
+                ->join('inventory_barcodes', 'inventory_barcodes.entry_no', '=', 'supplier_payments.po_no')
+                ->where('inventory_barcodes.entry_point', 'purchase')
+                ->where('inventory_barcodes.barcode', $filters['barcode'])
+                ->whereNull('supplier_payments.deleted_at')
+                ->select('supplier_payments.sl_no');
+            $query->whereIn('supplier_payments.sl_no', $prsOfBarcode);
+        }
+
+        // newest first
+        $records = $query->orderByDesc('supplier_payments.sl_no')->get();
+
+        $rows = [];
+        foreach ($records as $record) {
+            $record->payment_amount = (float) $record->payment_amount;
+            $record->discount = (float) $record->discount;
+            $record->total_amount = round($record->payment_amount + $record->discount, 2);
+            $rows[] = $record;
+        }
+
+        $labels = [];
+        if (!empty($filters['company_id'])) {
+            $labels['Company'] = $this->name('companies', $filters['company_id']);
+        }
+        if (!empty($filters['payment_type'])) {
+            $type = $filters['payment_type'];
+            $labels['Payment Type'] = SupplierPayment::TYPE_NAMES[$type] ?? $type;
+        }
+        if (!empty($filters['bank_name'])) {
+            $labels['Bank Name'] = $filters['bank_name'];
+        }
+        if (!empty($filters['supplier_id'])) {
+            $labels['Supplier'] = $this->name('suppliers', $filters['supplier_id']);
+        }
+        if (!empty($filters['barcode'])) {
+            $labels['Barcode'] = $filters['barcode'];
+        }
+
+        return [
+            'rows' => $rows,
+            'company' => $this->inventoryReports->company($filters['company_id'] ?? null),
+            'labels' => $labels,
+        ];
+    }
+
+    // Supplier Ledger (parts_bazar suppliers/partyLedgerViewDateWise)
+    // Shows every purchase, return, refund and payment of one supplier between the dates,
+    // with a running balance (what we owe the supplier) that starts from the opening balance.
+    public function supplierLedger(array $filters): array
+    {
+        $startDate = $filters['start_date'];
+        $endDate = $filters['end_date'];
+
+        $supplier = DB::table('suppliers')
+            ->whereNull('deleted_at')
+            ->where('id', $filters['supplier_id'])
+            ->first(['id', 'name', 'code', 'phone', 'address', 'opening_balance', 'opening_balance_type']);
+        if (!$supplier) {
+            abort(404, 'Supplier not found');
+        }
+
+        // the supplier's own opening balance (type 2 means we owe the supplier, type 1 means the supplier owes us)
+        $openingBalance = (float) $supplier->opening_balance;
+        if ($supplier->opening_balance_type != '2') {
+            $openingBalance = -$openingBalance;
+        }
+
+        // a company user only sees the transactions of own company
+        $companyId = null;
+        if (!empty($filters['company_id'])) {
+            $companyId = $filters['company_id'];
+        }
+        $ownCompanyId = $this->inventoryReports->ownCompanyId();
+        if ($ownCompanyId) {
+            $companyId = $ownCompanyId;
+        }
+
+        $transactions = $this->supplierTransactions($supplier->id, $endDate, $companyId);
+
+        // transactions before the start date go into the opening balance,
+        // the rest are the report rows
+        $rows = [];
+        $balance = $openingBalance;
+        foreach ($transactions as $transaction) {
+            if ($transaction['date'] < $startDate) {
+                $openingBalance = $openingBalance + $transaction['credit'] - $transaction['debit'];
+                $balance = $openingBalance;
+                continue;
+            }
+
+            $balance = $balance + $transaction['credit'] - $transaction['debit'];
+            $transaction['balance'] = round($balance, 2);
+            $rows[] = $transaction;
+        }
+
+        $labels = [];
+        if (!empty($filters['company_id'])) {
+            $labels['Company'] = $this->name('companies', $filters['company_id']);
+        }
+
+        unset($supplier->opening_balance, $supplier->opening_balance_type);
+
+        return [
+            'rows' => $rows,
+            'opening' => round($openingBalance, 2),
+            'supplier' => $supplier,
+            'company' => $this->inventoryReports->company($companyId),
+            'labels' => $labels,
+        ];
+    }
+
+    // All ledger lines of a supplier up to the date, oldest first.
+    // Credit increases what we owe the supplier, debit decreases it.
+    // $companyId: only the transactions of this company (null = all)
+    private function supplierTransactions($supplierId, $endDate, $companyId): array
+    {
+        $transactions = [];
+
+        // 1. approved purchases (credit)
+        $purchases = DB::table('purchases')
+            ->whereNull('deleted_at')
+            ->where('status', Purchase::APPROVED)
+            ->where('supplier_id', $supplierId)
+            ->where('purchase_date', '<=', $endDate);
+        if ($companyId) {
+            $purchases->where('company_id', $companyId);
+        }
+
+        foreach ($purchases->get() as $purchase) {
+            $transactions[] = [
+                'id' => $purchase->id,
+                'date' => $purchase->purchase_date,
+                'sort' => 1,
+                'type' => 'Purchase',
+                'head' => 'Purchase Order No: ' . $purchase->po_no,
+                'bill_no' => $purchase->supplier_bill_no,
+                'debit' => 0,
+                'credit' => (float) $purchase->grand_total,
+            ];
+        }
+
+        // 2. purchase returns (debit) and 3. the money the supplier paid back on a return (credit)
+        $returns = DB::table('purchase_returns')
+            ->leftJoin('purchases', 'purchases.id', '=', 'purchase_returns.purchase_id')
+            ->whereNull('purchase_returns.deleted_at')
+            ->where('purchase_returns.supplier_id', $supplierId)
+            ->where('purchase_returns.return_date', '<=', $endDate)
+            ->select('purchase_returns.*', 'purchases.po_no');
+        if ($companyId) {
+            $returns->where('purchase_returns.company_id', $companyId);
+        }
+
+        foreach ($returns->get() as $return) {
+            $transactions[] = [
+                'id' => $return->id,
+                'date' => $return->return_date,
+                'sort' => 2,
+                'type' => 'Return',
+                'head' => 'Purchase Order No: ' . $return->po_no . ', Purchase Return: ' . $return->return_no,
+                'bill_no' => null,
+                'debit' => (float) $return->total_amount,
+                'credit' => 0,
+            ];
+
+            if ($return->refund_amount > 0) {
+                $transactions[] = [
+                    'id' => $return->id,
+                    'date' => $return->return_date,
+                    'sort' => 3,
+                    'type' => 'Refund',
+                    'head' => 'Purchase Order No: ' . $return->po_no . ', Purchase Refund: ' . $return->return_no,
+                    'bill_no' => null,
+                    'debit' => 0,
+                    'credit' => (float) $return->refund_amount,
+                ];
+            }
+        }
+
+        // 4. payments (debit), one line per PR no
+        $payments = DB::table('supplier_payments')
+            ->whereNull('deleted_at')
+            ->where('supplier_id', $supplierId)
+            ->where('payment_date', '<=', $endDate)
+            ->orderBy('id');
+        if ($companyId) {
+            // the advance line of a PR has no company, so pick the PRs that have a line of this company
+            $prsOfCompany = DB::table('supplier_payments')
+                ->whereNull('deleted_at')
+                ->where('supplier_id', $supplierId)
+                ->where('company_id', $companyId)
+                ->select('sl_no');
+            $payments->whereIn('sl_no', $prsOfCompany);
+        }
+
+        $paymentLines = [];
+        foreach ($payments->get() as $payment) {
+            // an Adjustment payment only moves old advance onto POs, so its amount is not new money;
+            // only its discount counts (same as the supplier due)
+            $amount = $payment->amount;
+            if ($payment->payment_type == SupplierPayment::ADJUSTMENT) {
+                $amount = 0;
+            }
+            $debit = $amount + $payment->discount;
+
+            $key = $payment->sl_no . '|' . $payment->payment_date;
+            if (!isset($paymentLines[$key])) {
+                $paymentLines[$key] = [
+                    'id' => $payment->id,
+                    'date' => $payment->payment_date,
+                    'sort' => 4,
+                    'type' => 'Payment',
+                    'head' => 'Payment: ' . $payment->sl_no,
+                    'bill_no' => $payment->supplier_mr_no,
+                    'debit' => 0,
+                    'credit' => 0,
+                ];
+            }
+            $paymentLines[$key]['debit'] += (float) $debit;
+        }
+
+        foreach ($paymentLines as $line) {
+            if ($line['debit'] != 0) {
+                $transactions[] = $line;
+            }
+        }
+
+        // oldest first; on the same day: purchases, returns, refunds, then payments
+        usort($transactions, function ($a, $b) {
+            if ($a['date'] != $b['date']) {
+                return strcmp($a['date'], $b['date']);
+            }
+            if ($a['sort'] != $b['sort']) {
+                return $a['sort'] - $b['sort'];
+            }
+            return $a['id'] - $b['id'];
+        });
+
+        return $transactions;
+    }
+
     // supplier picker of the report search forms: search by name, phone or code
+    // (suppliers have no company, every company uses the same supplier list)
     public function searchSuppliers(string $term)
     {
         $query = DB::table('suppliers')
@@ -318,11 +629,6 @@ class PurchaseReportService
                     ->orWhere('code', 'like', "%{$term}%");
             })
             ->select('id', 'name', 'phone', 'code');
-
-        $ownCompanyId = $this->inventoryReports->ownCompanyId();
-        if ($ownCompanyId) {
-            $query->where('company_id', $ownCompanyId);
-        }
 
         return $query->orderBy('name')->limit(20)->get();
     }

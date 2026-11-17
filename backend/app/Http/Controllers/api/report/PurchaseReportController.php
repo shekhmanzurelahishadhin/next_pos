@@ -14,6 +14,8 @@ class PurchaseReportController extends Controller
         $this->middleware('permission:purchase-report.view')->only('purchase');
         $this->middleware('permission:purchase-summary-report.view')->only('purchaseSummary');
         $this->middleware('permission:purchase-return-report.view')->only('purchaseReturn');
+        $this->middleware('permission:payment-report.view')->only('payment');
+        $this->middleware('permission:supplier-ledger-report.view')->only('supplierLedger');
     }
 
     public function purchase(Request $request)
@@ -57,6 +59,33 @@ class PurchaseReportController extends Controller
         ]);
 
         return ApiResponse::success($this->service->purchaseReturn($filters), 'Purchase return report retrieve successfully');
+    }
+
+    public function payment(Request $request)
+    {
+        $filters = $request->validate([
+            'start_date' => 'required|date',
+            'end_date' => 'required|date|after_or_equal:start_date',
+            'company_id' => 'nullable|integer',
+            'payment_type' => 'nullable|string|max:10',
+            'bank_name' => 'nullable|string|max:255',
+            'supplier_id' => 'nullable|integer',
+            'barcode' => 'nullable|string|max:255',
+        ]);
+
+        return ApiResponse::success($this->service->payment($filters), 'Payment report retrieve successfully');
+    }
+
+    public function supplierLedger(Request $request)
+    {
+        $filters = $request->validate([
+            'start_date' => 'required|date',
+            'end_date' => 'required|date|after_or_equal:start_date',
+            'company_id' => 'nullable|integer',
+            'supplier_id' => 'required|integer',
+        ]);
+
+        return ApiResponse::success($this->service->supplierLedger($filters), 'Supplier ledger report retrieve successfully');
     }
 
     public function searchSuppliers(Request $request)

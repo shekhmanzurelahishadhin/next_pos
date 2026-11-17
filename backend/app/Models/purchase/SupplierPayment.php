@@ -17,6 +17,9 @@ class SupplierPayment extends Model
     const OPENING = 'ob';       // po_no of a line paying the opening balance
     const ADVANCE = 'advance';  // po_no of the part of the lot not given to any PO
     const ADJUSTMENT = '5';     // payment_type: old advance pays the POs, no new money goes out
+    const CASH = '1';           // payment_type: cash (an empty type also counts as cash)
+
+    const TYPE_NAMES = ['1' => 'Cash', '2' => 'Cheque', '3' => 'Deposit Into Bank', '4' => 'Card', '5' => 'Adjustment'];
 
     public $noSlug = true;
 
