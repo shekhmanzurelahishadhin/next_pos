@@ -362,6 +362,20 @@ export interface SupplierLedgerSummaryReport {
   labels: Record<string, string> | [];
 }
 
+export interface SupplierDueRow {
+  id: number;
+  supplier_name: string;
+  phone: string | null;
+  email: string | null;
+  due_amount: number;
+}
+
+export interface SupplierDueReport {
+  rows: SupplierDueRow[];
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
 export interface ReportCustomer {
   id: number;
   name: string;
@@ -413,6 +427,11 @@ class ReportService {
 
   async supplierLedgerSummary(filters: Record<string, string>): Promise<SupplierLedgerSummaryReport> {
     const res = await api.get("/reports/purchase/supplier-ledger-summary", { params: filters });
+    return res.data.data;
+  }
+
+  async supplierDue(filters: Record<string, string>): Promise<SupplierDueReport> {
+    const res = await api.get("/reports/purchase/supplier-due", { params: filters });
     return res.data.data;
   }
 

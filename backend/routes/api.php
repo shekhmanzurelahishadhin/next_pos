@@ -280,6 +280,7 @@ Route::prefix('v1')->group(function () {
                 Route::get('payment', [PurchaseReportController::class, 'payment']);
                 Route::get('supplier-ledger', [PurchaseReportController::class, 'supplierLedger']);
                 Route::get('supplier-ledger-summary', [PurchaseReportController::class, 'supplierLedgerSummary']);
+                Route::get('supplier-due', [PurchaseReportController::class, 'supplierDue']);
             });
             Route::prefix('sales')->group(function () {
                 Route::get('sales', [SalesReportController::class, 'sales']);

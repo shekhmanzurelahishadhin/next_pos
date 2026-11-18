@@ -634,6 +634,48 @@ class PurchaseReportService
         ];
     }
 
+    // Supplier Due Report (parts_bazar purchaseItems/dueReport)
+    // Every supplier we owe money to up to the date.
+    // Due = opening balance + approved purchases + refunds - payments - returns,
+    // which is the closing balance of the Supplier Ledger on that date.
+    public function supplierDue(array $filters): array
+    {
+        // the ledger summary of the one day "up to" gives the closing balance up to that day
+        $summaryFilters = $filters;
+        $summaryFilters['start_date'] = $filters['end_date'];
+        $summary = $this->supplierLedgerSummary($summaryFilters);
+
+        // only the suppliers we still owe money to
+        $dues = [];
+        foreach ($summary['rows'] as $row) {
+            if ($row['closing'] > 0) {
+                $dues[$row['id']] = $row['closing'];
+            }
+        }
+
+        $suppliers = DB::table('suppliers')
+            ->whereIn('id', array_keys($dues))
+            ->orderBy('name')
+            ->get(['id', 'name', 'phone', 'email']);
+
+        $rows = [];
+        foreach ($suppliers as $supplier) {
+            $rows[] = [
+                'id' => $supplier->id,
+                'supplier_name' => $supplier->name,
+                'phone' => $supplier->phone,
+                'email' => $supplier->email,
+                'due_amount' => $dues[$supplier->id],
+            ];
+        }
+
+        return [
+            'rows' => $rows,
+            'company' => $summary['company'],
+            'labels' => $summary['labels'],
+        ];
+    }
+
     // All ledger lines of a supplier up to the date, oldest first.
     // Credit increases what we owe the supplier, debit decreases it.
     // $companyId: only the transactions of this company (null = all)
