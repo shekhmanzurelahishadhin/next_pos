@@ -376,6 +376,20 @@ export interface SupplierDueReport {
   labels: Record<string, string> | [];
 }
 
+export interface SupplierInfoRow {
+  id: number;
+  name: string;
+  phone: string | null;
+  address: string | null;
+  email: string | null;
+}
+
+export interface SupplierInfoReport {
+  rows: SupplierInfoRow[];
+  company: ReportCompany | null;
+  labels: Record<string, string> | [];
+}
+
 export interface ReportCustomer {
   id: number;
   name: string;
@@ -432,6 +446,11 @@ class ReportService {
 
   async supplierDue(filters: Record<string, string>): Promise<SupplierDueReport> {
     const res = await api.get("/reports/purchase/supplier-due", { params: filters });
+    return res.data.data;
+  }
+
+  async supplierInfo(filters: Record<string, string>): Promise<SupplierInfoReport> {
+    const res = await api.get("/reports/purchase/supplier-info", { params: filters });
     return res.data.data;
   }
 

@@ -676,6 +676,37 @@ class PurchaseReportService
         ];
     }
 
+    // Supplier Info Report (parts_bazar suppliers/supplierInfoReport)
+    // Contact information of every supplier, or of the picked one.
+    // Suppliers have no company (every company uses the same list), so the company
+    // only goes into the report header.
+    public function supplierInfo(array $filters): array
+    {
+        $query = DB::table('suppliers')
+            ->whereNull('deleted_at')
+            ->select('id', 'name', 'phone', 'address', 'email');
+
+        if (!empty($filters['supplier_id'])) {
+            $query->where('id', $filters['supplier_id']);
+        }
+
+        $rows = $query->orderBy('id')->get();
+
+        $labels = [];
+        if (!empty($filters['supplier_id'])) {
+            $labels['Supplier'] = $this->name('suppliers', $filters['supplier_id']);
+        }
+        if (!empty($filters['company_id'])) {
+            $labels['Company'] = $this->name('companies', $filters['company_id']);
+        }
+
+        return [
+            'rows' => $rows,
+            'company' => $this->inventoryReports->company($filters['company_id'] ?? null),
+            'labels' => $labels,
+        ];
+    }
+
     // All ledger lines of a supplier up to the date, oldest first.
     // Credit increases what we owe the supplier, debit decreases it.
     // $companyId: only the transactions of this company (null = all)

@@ -714,6 +714,7 @@ class ModuleMenuPermissionSeeder extends Seeder
             'Supplier (Ledger)' => 'supplier-ledger-report',
             'Supplier (Ledger) Summary' => 'supplier-ledger-summary-report',
             'Supplier Due Report' => 'supplier-due-report',
+            'Supplier Info Report' => 'supplier-info-report',
         ];
         foreach ($purchaseReports as $menuName => $slug) {
             $reportMenu = Menu::updateOrCreate(

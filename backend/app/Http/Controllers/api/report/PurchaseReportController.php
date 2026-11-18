@@ -18,6 +18,7 @@ class PurchaseReportController extends Controller
         $this->middleware('permission:supplier-ledger-report.view')->only('supplierLedger');
         $this->middleware('permission:supplier-ledger-summary-report.view')->only('supplierLedgerSummary');
         $this->middleware('permission:supplier-due-report.view')->only('supplierDue');
+        $this->middleware('permission:supplier-info-report.view')->only('supplierInfo');
     }
 
     public function purchase(Request $request)
@@ -111,6 +112,16 @@ class PurchaseReportController extends Controller
         ]);
 
         return ApiResponse::success($this->service->supplierDue($filters), 'Supplier due report retrieve successfully');
+    }
+
+    public function supplierInfo(Request $request)
+    {
+        $filters = $request->validate([
+            'company_id' => 'nullable|integer',
+            'supplier_id' => 'nullable|integer',
+        ]);
+
+        return ApiResponse::success($this->service->supplierInfo($filters), 'Supplier info report retrieve successfully');
     }
 
     public function searchSuppliers(Request $request)
