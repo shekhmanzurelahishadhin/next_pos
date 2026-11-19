@@ -56,10 +56,6 @@ class ChartOfAc extends Model
     const COST_OF_GOODS_SOLD = 5127;
     const INVENTORY_ADJUSTMENT = 5128;
 
-    protected $casts = [
-        'dep_start_date' => 'date:Y-m-d',
-    ];
-
     // dates go out as local time "2026-11-15 16:01:06", not as UTC
     protected function serializeDate(DateTimeInterface $date)
     {

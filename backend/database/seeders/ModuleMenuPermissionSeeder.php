@@ -974,7 +974,29 @@ class ModuleMenuPermissionSeeder extends Seeder
             );
         }
 
-        // the base heads of the Chart of Accounts
+        // Chart Of AC Opening and Currency (conversion rate in BDT)
+        $accountingMenus = [
+            'Chart Of AC Opening' => 'chart-of-ac-opening',
+            'Currency' => 'currency-conversion',
+        ];
+        foreach ($accountingMenus as $menuName => $slug) {
+            $accountingMenu = Menu::updateOrCreate(
+                ['name' => $menuName, 'module_id' => $accountingModule->id],
+                ['slug' => $slug]
+            );
+            foreach (['create', 'view', 'edit', 'delete'] as $action) {
+                Permission::updateOrCreate(
+                    ['name' => "{$slug}.{$action}", 'guard_name' => 'web'],
+                    [
+                        'module_id'   => $accountingModule->id,
+                        'menu_id'     => $accountingMenu->id,
+                        'sub_menu_id' => null,
+                    ]
+                );
+            }
+        }
+
+        // the base heads of the Chart of Accounts and the BDT rate
         $this->call(ChartOfAcSeeder::class);
     }
 }

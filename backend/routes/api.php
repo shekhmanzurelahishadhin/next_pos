@@ -38,6 +38,8 @@ use App\Http\Controllers\api\softConfig\ProductController;
 use App\Http\Controllers\api\softConfig\PurchasePriceController;
 use App\Http\Controllers\api\softConfig\ProductPriceController;
 use App\Http\Controllers\api\accounting\ChartOfAcController;
+use App\Http\Controllers\api\accounting\ChartOfAcOpeningController;
+use App\Http\Controllers\api\accounting\CurrencyConversionController;
 use App\Helpers\ApiResponse;
 
 
@@ -225,6 +227,25 @@ Route::prefix('v1')->group(function () {
                 Route::post('/', [ChartOfAcController::class, 'store']);
                 Route::post('/delete-selected', [ChartOfAcController::class, 'deleteSelected']);
                 Route::put('/{chartOfAc}', [ChartOfAcController::class, 'update']);
+            });
+
+            // Chart Of AC Opening
+            Route::prefix('chart-of-ac-openings')->group(function () {
+                Route::get('/', [ChartOfAcOpeningController::class, 'index']);
+                Route::get('/heads', [ChartOfAcOpeningController::class, 'heads']);
+                Route::post('/', [ChartOfAcOpeningController::class, 'store']);
+                Route::put('/{chartOfAcOpening}', [ChartOfAcOpeningController::class, 'update']);
+                Route::delete('/{chartOfAcOpening}', [ChartOfAcOpeningController::class, 'destroy']);
+            });
+
+            // Currency (conversion rate in BDT)
+            Route::prefix('currency-conversions')->group(function () {
+                Route::get('/', [CurrencyConversionController::class, 'index']);
+                Route::get('/currencies', [CurrencyConversionController::class, 'currencies']);
+                Route::get('/rate', [CurrencyConversionController::class, 'rate']);
+                Route::post('/', [CurrencyConversionController::class, 'store']);
+                Route::put('/{currencyConversion}', [CurrencyConversionController::class, 'update']);
+                Route::delete('/{currencyConversion}', [CurrencyConversionController::class, 'destroy']);
             });
         });
 

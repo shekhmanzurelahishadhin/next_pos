@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\accounting\ChartOfAc;
+use App\Models\accounting\CurrencyConversion;
 use Illuminate\Database\Seeder;
 
 // The base heads of the Chart of Accounts, same ids and codes as parts_bazar.
@@ -59,11 +60,13 @@ class ChartOfAcSeeder extends Seeder
                 $mainRootId = $this->mainRootOf($root);
             }
 
+            // only a missing head is added, a head the user has renamed stays as it is
             $account = ChartOfAc::find($id);
-            if (!$account) {
-                $account = new ChartOfAc();
-                $account->id = $id;
+            if ($account) {
+                continue;
             }
+            $account = new ChartOfAc();
+            $account->id = $id;
             $account->code = $head[1];
             $account->title = $head[2];
             $account->root = $root;
@@ -71,6 +74,17 @@ class ChartOfAcSeeder extends Seeder
             $account->account_type = ChartOfAc::PARENT_CA;
             $account->head_type = ChartOfAc::MANUAL;
             $account->save();
+        }
+
+        // BDT is 1 BDT, like the parts_bazar Currency list, so an opening in BDT works at once
+        $hasBdtRate = CurrencyConversion::where('currency_id', CurrencyConversion::BDT)->exists();
+        if (!$hasBdtRate) {
+            CurrencyConversion::create([
+                'currency_id' => CurrencyConversion::BDT,
+                'date_from' => '2000-01-01',
+                'date_to' => '2999-12-31',
+                'amount_in_bdt' => 1,
+            ]);
         }
     }
 

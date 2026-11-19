@@ -72,6 +72,12 @@ class LookupSeeder extends Seeder
             ['name' => 'Van Carry',  'type' => 'ship_by', 'code' => 7],
             ['name' => 'Sea Ship',   'type' => 'ship_by', 'code' => 8],
             ['name' => 'Pathao',     'type' => 'ship_by', 'code' => 9],
+
+            // Currency (same codes as parts_bazar)
+            ['name' => 'Dollar', 'type' => 'currency', 'code' => 1],
+            ['name' => 'Euro',   'type' => 'currency', 'code' => 2],
+            ['name' => 'BDT',    'type' => 'currency', 'code' => 3],
+            ['name' => 'Yuan',   'type' => 'currency', 'code' => 4],
         ];
 
         foreach ($lookups as $lookup) {
