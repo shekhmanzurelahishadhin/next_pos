@@ -117,6 +117,8 @@ const ReactSelect: React.FC<ReactSelectProps> = ({
           indicatorSeparator: () => "hidden",
           menu: () =>
             "mt-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg z-50",
+          // the list that scrolls: thin scrollbar, dark in dark mode
+          menuList: () => "custom-scrollbar",
           option: ({ isFocused, isSelected }) =>
             [
               "px-3 py-1.5 text-[13px] cursor-pointer select-none",

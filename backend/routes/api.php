@@ -37,6 +37,7 @@ use App\Http\Controllers\api\purchase\SupplierPaymentController;
 use App\Http\Controllers\api\softConfig\ProductController;
 use App\Http\Controllers\api\softConfig\PurchasePriceController;
 use App\Http\Controllers\api\softConfig\ProductPriceController;
+use App\Http\Controllers\api\accounting\ChartOfAcController;
 use App\Helpers\ApiResponse;
 
 
@@ -212,6 +213,18 @@ Route::prefix('v1')->group(function () {
                 Route::post('/{product}/purchase-price', [ProductPriceController::class, 'addPurchasePrice']);
                 Route::post('/{product}/sell-price', [ProductPriceController::class, 'addSellPrice']);
                 Route::get('/{product}/sell-price-history', [ProductPriceController::class, 'sellPriceHistory']);
+            });
+        });
+
+        // Accounting
+        Route::prefix('accounting')->group(function () {
+            // Chart of Accounts
+            Route::prefix('chart-of-acs')->group(function () {
+                Route::get('/', [ChartOfAcController::class, 'index']);
+                Route::get('/next-code', [ChartOfAcController::class, 'nextCode']);
+                Route::post('/', [ChartOfAcController::class, 'store']);
+                Route::post('/delete-selected', [ChartOfAcController::class, 'deleteSelected']);
+                Route::put('/{chartOfAc}', [ChartOfAcController::class, 'update']);
             });
         });
 

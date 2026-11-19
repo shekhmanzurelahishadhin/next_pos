@@ -14,7 +14,7 @@ import {
   FiShoppingBag,
   FiSearch,
 } from "../icons/index";
-import { FiBox } from "react-icons/fi";
+import { FiBox, FiBookOpen } from "react-icons/fi";
 import { useAuth } from "@/context/AuthContext";
 
 // Types
@@ -138,6 +138,14 @@ const navItems: NavItem[] = [
       { group: "Report", name: "Customer Ledger", path: "/sales/report/customer-ledger", requiredPermissions: ["customer-ledger-report.view"] },
       { group: "Report", name: "Customer Ledger Summary", path: "/sales/report/customer-ledger-summary", requiredPermissions: ["customer-ledger-summary-report.view"] },
       { group: "Report", name: "Customer Info Report", path: "/sales/report/customer-info", requiredPermissions: ["customer-info-report.view"] },
+    ],
+  },
+  {
+    name: "Accounting",
+    icon: <FiBookOpen />,
+    section: "Business",
+    subItems: [
+      { group: "Configure", name: "Chart Of Accounts", path: "/accounting/chart-of-ac", requiredPermissions: ["chart-of-ac.view", "chart-of-ac.create", "chart-of-ac.edit", "chart-of-ac.delete"] },
     ],
   },
 ];

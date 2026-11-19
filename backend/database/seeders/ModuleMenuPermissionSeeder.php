@@ -951,5 +951,30 @@ class ModuleMenuPermissionSeeder extends Seeder
                 ]
             );
         }
+
+        // Accounting module
+        $accountingModule = Module::updateOrCreate(
+            ['name' => 'Accounting'],
+            ['slug' => 'accounting']
+        );
+
+        // Chart of Accounts
+        $chartOfAcMenu = Menu::updateOrCreate(
+            ['name' => 'Chart Of Ac', 'module_id' => $accountingModule->id],
+            ['slug' => 'chart-of-ac']
+        );
+        foreach (['create', 'view', 'edit', 'delete'] as $action) {
+            Permission::updateOrCreate(
+                ['name' => "chart-of-ac.{$action}", 'guard_name' => 'web'],
+                [
+                    'module_id'   => $accountingModule->id,
+                    'menu_id'     => $chartOfAcMenu->id,
+                    'sub_menu_id' => null,
+                ]
+            );
+        }
+
+        // the base heads of the Chart of Accounts
+        $this->call(ChartOfAcSeeder::class);
     }
 }

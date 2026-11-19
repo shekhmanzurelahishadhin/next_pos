@@ -67,6 +67,7 @@ export function Filter({ column, options, onFilterChange, onApply }: FilterProps
           dropdownIndicator: () => "[&_svg]:h-3.5 [&_svg]:w-3.5",
           indicatorSeparator: () => "hidden",
           menu: () => "mt-1 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900",
+          menuList: () => "custom-scrollbar", // dark scrollbar in dark mode
           option: ({ isFocused, isSelected }) =>
             `cursor-pointer px-3 py-1.5 text-xs font-normal ${
               isSelected
