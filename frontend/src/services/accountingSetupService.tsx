@@ -55,10 +55,37 @@ export interface ChartOfAcOpeningPayload {
   amount_in_foreign_currency: string;
 }
 
+// ---------- Voucher Type (number format) ----------
+
+export interface VoucherType {
+  id: number;
+  name: string;
+  type_format: string;
+  created_at: string | null;
+  updated_at: string | null;
+  created_by: UserName;
+  updated_by: UserName;
+}
+
+// voucher number shown on a voucher, like parts_bazar: "JV# 12"
+export function voucherNo(format: string, entryNo: number | string) {
+  return format + "# " + entryNo;
+}
+
+const VOUCHER_TYPE = "/accounting/voucher-types";
 const CURRENCY = "/accounting/currency-conversions";
 const OPENING = "/accounting/chart-of-ac-openings";
 
 class AccountingSetupService {
+  async getVoucherTypes(filters: Record<string, string | number> = {}): Promise<VoucherType[]> {
+    const res = await api.get(VOUCHER_TYPE, { params: removeEmpty(filters) });
+    return res.data.data;
+  }
+
+  async updateVoucherType(id: number, typeFormat: string) {
+    await api.put(`${VOUCHER_TYPE}/${id}`, { type_format: typeFormat });
+  }
+
   async getCurrencyRates(filters: Record<string, string | number> = {}) {
     const res = await api.get(CURRENCY, { params: removeEmpty(filters) });
     return res.data.data as { data: CurrencyConversion[]; currencies: Option[] };

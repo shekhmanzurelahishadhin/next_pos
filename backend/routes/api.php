@@ -40,6 +40,7 @@ use App\Http\Controllers\api\softConfig\ProductPriceController;
 use App\Http\Controllers\api\accounting\ChartOfAcController;
 use App\Http\Controllers\api\accounting\ChartOfAcOpeningController;
 use App\Http\Controllers\api\accounting\CurrencyConversionController;
+use App\Http\Controllers\api\accounting\VoucherTypeController;
 use App\Helpers\ApiResponse;
 
 
@@ -246,6 +247,12 @@ Route::prefix('v1')->group(function () {
                 Route::post('/', [CurrencyConversionController::class, 'store']);
                 Route::put('/{currencyConversion}', [CurrencyConversionController::class, 'update']);
                 Route::delete('/{currencyConversion}', [CurrencyConversionController::class, 'destroy']);
+            });
+
+            // Voucher Type (only the format can be updated)
+            Route::prefix('voucher-types')->group(function () {
+                Route::get('/', [VoucherTypeController::class, 'index']);
+                Route::put('/{voucherType}', [VoucherTypeController::class, 'update']);
             });
         });
 

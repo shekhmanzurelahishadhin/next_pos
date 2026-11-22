@@ -996,7 +996,26 @@ class ModuleMenuPermissionSeeder extends Seeder
             }
         }
 
+        // Voucher Type: the types are fixed, so only view and edit (same as parts_bazar)
+        $voucherTypeMenu = Menu::updateOrCreate(
+            ['name' => 'Voucher Type', 'module_id' => $accountingModule->id],
+            ['slug' => 'voucher-type']
+        );
+        foreach (['view', 'edit'] as $action) {
+            Permission::updateOrCreate(
+                ['name' => "voucher-type.{$action}", 'guard_name' => 'web'],
+                [
+                    'module_id'   => $accountingModule->id,
+                    'menu_id'     => $voucherTypeMenu->id,
+                    'sub_menu_id' => null,
+                ]
+            );
+        }
+
         // the base heads of the Chart of Accounts and the BDT rate
         $this->call(ChartOfAcSeeder::class);
+
+        // the 6 voucher types with the parts_bazar formats
+        $this->call(VoucherTypeSeeder::class);
     }
 }
