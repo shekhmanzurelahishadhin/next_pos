@@ -3,6 +3,8 @@
 namespace App\Services\accounting;
 
 use App\Models\accounting\ChartOfAc;
+use App\Models\accounting\ChartOfAcOpening;
+use App\Models\accounting\JournalEntry;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -36,7 +38,14 @@ class ChartOfAcService
             if ($account->account_type == ChartOfAc::PARENT_CA) {
                 throw new \RuntimeException('Can not delete this CA, it is a system head. (' . $account->title . ')');
             }
-            // the check for journal entries is added with the voucher entry
+            $hasEntry = JournalEntry::where('ca_id', $account->id)->exists();
+            if ($hasEntry) {
+                throw new \RuntimeException('Can not delete this CA, a transaction has already been performed with this CA. (' . $account->title . ')');
+            }
+            $hasOpening = ChartOfAcOpening::where('ca_id', $account->id)->exists();
+            if ($hasOpening) {
+                throw new \RuntimeException('Can not delete this CA, it has an opening amount. (' . $account->title . ')');
+            }
         }
 
         DB::transaction(function () use ($accounts) {

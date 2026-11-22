@@ -10,6 +10,7 @@ interface ComponentCardProps {
   showAddButton?: boolean;
   openModal?: () => void;
   buttonLabel?: string;
+  headerAction?: React.ReactNode; // any other button on the right of the header, e.g. a Back button
 }
 
 const ComponentCard: React.FC<ComponentCardProps> = ({
@@ -20,6 +21,7 @@ const ComponentCard: React.FC<ComponentCardProps> = ({
   showAddButton = false,
   openModal,
   buttonLabel = "Add New",
+  headerAction,
 }) => {
   return (
     <div
@@ -38,6 +40,7 @@ const ComponentCard: React.FC<ComponentCardProps> = ({
             </p>
           )}
         </div>
+        {headerAction && <div className="shrink-0">{headerAction}</div>}
         {showAddButton && (
           <Button size="sm" onClick={openModal} className="shrink-0">
             <FiPlus /> {buttonLabel}

@@ -41,6 +41,7 @@ use App\Http\Controllers\api\accounting\ChartOfAcController;
 use App\Http\Controllers\api\accounting\ChartOfAcOpeningController;
 use App\Http\Controllers\api\accounting\CurrencyConversionController;
 use App\Http\Controllers\api\accounting\VoucherTypeController;
+use App\Http\Controllers\api\accounting\JournalEntryController;
 use App\Helpers\ApiResponse;
 
 
@@ -253,6 +254,18 @@ Route::prefix('v1')->group(function () {
             Route::prefix('voucher-types')->group(function () {
                 Route::get('/', [VoucherTypeController::class, 'index']);
                 Route::put('/{voucherType}', [VoucherTypeController::class, 'update']);
+            });
+
+            // Voucher Entry
+            Route::prefix('journal-entries')->group(function () {
+                Route::get('/heads', [JournalEntryController::class, 'heads']);
+                Route::get('/next-no', [JournalEntryController::class, 'nextNo']);
+                Route::post('/', [JournalEntryController::class, 'store']);
+                Route::get('/', [JournalEntryController::class, 'index']);
+                Route::get('/{voucherType}/{entryNo}', [JournalEntryController::class, 'show'])->whereNumber(['voucherType', 'entryNo']);
+                Route::delete('/{voucherType}/{entryNo}', [JournalEntryController::class, 'destroy'])->whereNumber(['voucherType', 'entryNo']);
+                Route::put('/{voucherType}/{entryNo}', [JournalEntryController::class, 'update'])->whereNumber(['voucherType', 'entryNo']);
+                Route::post('/{voucherType}/{entryNo}/lock', [JournalEntryController::class, 'toggleLock'])->whereNumber(['voucherType', 'entryNo']);
             });
         });
 

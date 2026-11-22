@@ -149,6 +149,8 @@ const navItems: NavItem[] = [
       { group: "Configure", name: "Chart Of AC Opening", path: "/accounting/chart-of-ac-opening", requiredPermissions: ["chart-of-ac-opening.view", "chart-of-ac-opening.create", "chart-of-ac-opening.edit", "chart-of-ac-opening.delete"] },
       { group: "Configure", name: "Currency", path: "/accounting/currency", requiredPermissions: ["currency-conversion.view", "currency-conversion.create", "currency-conversion.edit", "currency-conversion.delete"] },
       { group: "Configure", name: "Voucher Type", path: "/accounting/voucher-type", requiredPermissions: ["voucher-type.view", "voucher-type.edit"] },
+      { group: "Voucher", name: "Voucher Entry", path: "/accounting/voucher-entry", requiredPermissions: ["voucher-entry.create"] },
+      { group: "Voucher", name: "Voucher Manage", path: "/accounting/voucher-manage", requiredPermissions: ["voucher-entry.view", "voucher-entry.delete"] },
     ],
   },
 ];

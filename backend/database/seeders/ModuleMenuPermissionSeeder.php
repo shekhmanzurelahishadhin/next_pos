@@ -1012,6 +1012,22 @@ class ModuleMenuPermissionSeeder extends Seeder
             );
         }
 
+        // Voucher Entry (create) and Voucher Manage (view, edit, delete) share one menu
+        $voucherEntryMenu = Menu::updateOrCreate(
+            ['name' => 'Voucher Entry', 'module_id' => $accountingModule->id],
+            ['slug' => 'voucher-entry']
+        );
+        foreach (['create', 'view', 'edit', 'delete'] as $action) {
+            Permission::updateOrCreate(
+                ['name' => "voucher-entry.{$action}", 'guard_name' => 'web'],
+                [
+                    'module_id'   => $accountingModule->id,
+                    'menu_id'     => $voucherEntryMenu->id,
+                    'sub_menu_id' => null,
+                ]
+            );
+        }
+
         // the base heads of the Chart of Accounts and the BDT rate
         $this->call(ChartOfAcSeeder::class);
 
