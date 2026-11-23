@@ -25,6 +25,7 @@ class JournalEntryRequest extends FormRequest
             'chalan_no'      => ['nullable', 'string', 'max:255'],
             'cheque_no'      => ['nullable', 'string', 'max:255'],
             'cheque_date'    => ['nullable', 'date'],
+            'cheque_id'      => ['nullable', 'integer'], // a leaf of the Cheque Book
             'payment_type'   => ['nullable', 'integer', 'in:1,2,3'],
             'pay_to'         => ['nullable', 'string', 'max:255'],
 
@@ -32,6 +33,7 @@ class JournalEntryRequest extends FormRequest
             'lines.*.ca_id'            => ['required', 'integer'],
             'lines.*.transaction_type' => ['required', 'integer', Rule::in([JournalEntry::DEBIT, JournalEntry::CREDIT])],
             'lines.*.amount'           => ['required', 'numeric', 'gt:0'],
+            'lines.*.cost_center_id'   => ['nullable', 'integer'],
         ];
     }
 

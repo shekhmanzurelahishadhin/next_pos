@@ -1,16 +1,18 @@
 "use client";
 // Voucher Entry, like parts_bazar accounting/journalEntry (bankPaymentCreate, cashReceiveCreate ...).
 // One page for the 6 voucher types: the type is picked from the tabs on top.
-// Lines are added to a list, the Dr total and the Cr total must be the same to save.
+// A line is added from the add form (Account, Cost Center, Dr / Cr, Amount) and goes to the grid
+// below, where its amount can still be changed. The summary on the right shows the
+// voucher no and the totals; the voucher can be saved when Total Dr and Total Cr are the same.
+// Bank Payment and Contra can take a cheque from the Cheque Book: it becomes USED on save.
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
-import { FiArrowLeft, FiPlus, FiTrash2 } from "react-icons/fi";
+import { FiArrowLeft, FiCheckCircle, FiPlus, FiTrash2 } from "react-icons/fi";
 import { useAuth } from "@/context/AuthContext";
 import { useAlert } from "@/hooks/useAlert";
 import AccessRoute from "@/routes/AccessRoute";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
-import ComponentCard from "@/components/common/ComponentCard";
 import Button from "@/components/ui/button/Button";
 import Label from "@/components/form/Label";
 import DatePicker from "@/components/form/date-picker";
@@ -18,31 +20,35 @@ import ReactSelect from "@/components/form/ReactSelect";
 import { formatMoney } from "@/lib/format";
 import { apiErrorMessage, blurOnWheel, loadOptions, Option } from "@/lib/options";
 import { accountingSetupService } from "@/services/accountingSetupService";
+import { ActiveCheque, chequeBookService } from "@/services/chequeBookService";
 import {
   BILL_TYPES,
   CHEQUE_TYPES,
+  costCenterName,
   CREDIT,
   DEBIT,
   journalEntryService,
   PAYMENT_TYPES,
   VOUCHER_TABS,
   VoucherLine,
+  VoucherPayload,
 } from "@/services/journalEntryService";
 
 const BDT = "3";
-// the last used voucher type is opened next time
-const LAST_TYPE_KEY = "voucher-entry-type";
 
 const DR_CR = [
   { value: String(DEBIT), label: "Dr" },
   { value: String(CREDIT), label: "Cr" },
 ];
+// the last used voucher type is opened next time
+const LAST_TYPE_KEY = "voucher-entry-type";
 
 const inputClass =
-  "h-10 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90";
+  "h-10 w-full rounded-lg border border-gray-300 bg-transparent px-3 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white/90 dark:disabled:bg-white/[0.03]";
 
-const readOnlyClass =
-  "flex h-10 w-full items-center rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-700 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-300";
+const amountClass = inputClass + " text-right font-medium";
+
+const cardClass = "rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]";
 
 // today in local time as "2026-11-22"
 function localToday() {
@@ -82,6 +88,30 @@ function saveType(value: number) {
   }
 }
 
+// Dr total, Cr total and Dr - Cr of the lines, rounded to paisa
+function totalsOf(list: VoucherLine[]) {
+  let dr = 0;
+  let cr = 0;
+  for (const line of list) {
+    if (line.transaction_type === DEBIT) {
+      dr = dr + toNumber(line.amount);
+    } else {
+      cr = cr + toNumber(line.amount);
+    }
+  }
+  dr = Math.round(dr * 100) / 100;
+  cr = Math.round(cr * 100) / 100;
+  return { dr: dr, cr: cr, difference: Math.round((dr - cr) * 100) / 100 };
+}
+
+function chequeLabel(cheque: ActiveCheque) {
+  let label = cheque.cheque_no;
+  if (cheque.bank_name) {
+    label = label + " — " + cheque.bank_name;
+  }
+  return label + " (Book " + cheque.book_no + ")";
+}
+
 // useSearchParams needs a Suspense boundary
 export default function VoucherEntryPage() {
   return (
@@ -109,6 +139,8 @@ function VoucherEntryForm() {
   const [companies, setCompanies] = useState<Option[]>([]);
   const [currencies, setCurrencies] = useState<Option[]>([]);
   const [heads, setHeads] = useState<{ value: number; label: string }[]>([]);
+  const [costCenters, setCostCenters] = useState<{ value: number; label: string }[]>([]);
+  const [cheques, setCheques] = useState<ActiveCheque[]>([]);
 
   const [companyId, setCompanyId] = useState("");
   const [entryDate, setEntryDate] = useState(localToday());
@@ -118,21 +150,23 @@ function VoucherEntryForm() {
 
   const [billNo, setBillNo] = useState("");
   const [chalanNo, setChalanNo] = useState("");
+  const [chequeId, setChequeId] = useState<number | null>(null);
   const [chequeNo, setChequeNo] = useState("");
   const [chequeDate, setChequeDate] = useState("");
   const [paymentType, setPaymentType] = useState("");
   const [payTo, setPayTo] = useState("");
   const [narration, setNarration] = useState("");
 
-  // the line being added
-  const [caId, setCaId] = useState<number | null>(null);
-  const [side, setSide] = useState(String(DEBIT));
-  const [amount, setAmount] = useState("");
+  // the line being added; like parts_bazar the cost center stays for the next line
+  const [entryCa, setEntryCa] = useState<number | null>(null);
+  const [entryCenter, setEntryCenter] = useState<number | null>(null);
+  const [entrySide, setEntrySide] = useState(String(DEBIT));
+  const [entryAmount, setEntryAmount] = useState("");
 
   const [lines, setLines] = useState<VoucherLine[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  // the cheque date picker is rebuilt after a save, so it shows the cleared value
+  // the date pickers are rebuilt after a save or a load, so they show the new value
   const [formKey, setFormKey] = useState(0);
 
   const hasBill = BILL_TYPES.includes(voucherType);
@@ -181,6 +215,12 @@ function VoucherEntryForm() {
         setChequeDate(detail.cheque_date || "");
         setPaymentType(detail.payment_type ? String(detail.payment_type) : "");
         setPayTo(detail.pay_to || "");
+        if (detail.cheque_id) {
+          setChequeId(detail.cheque_id);
+          // the voucher's own cheque is USED, so it is not in the active list: add it (bank_id 0 marks it)
+          const ownCheque: ActiveCheque = { id: detail.cheque_id, cheque_no: detail.cheque_no || "", book_no: detail.cheque_book_no || "", bank_id: 0, bank_name: "" };
+          setCheques((old) => [ownCheque, ...old]);
+        }
 
         const oldLines: VoucherLine[] = [];
         for (const line of detail.lines) {
@@ -193,16 +233,17 @@ function VoucherEntryForm() {
             transaction_type: line.transaction_type,
             // the amount as it was typed, in the voucher currency
             amount: String(Number(line.amount_in_foreign_currency)),
+            cost_center_id: line.cost_center_id,
+            cost_center: costCenterName(line.cost_center),
           });
         }
         setLines(oldLines);
-        // rebuild the date pickers with the voucher dates
         setFormKey((old) => old + 1);
       })
       .catch((err) => setEditBlocked(apiErrorMessage(err, "No result found !")));
   }, [isEdit, editType, editNo]);
 
-  // companies, currencies and account titles (the same titles for every voucher type)
+  // companies, currencies, account titles and cost centers (the same for every voucher type)
   useEffect(() => {
     loadOptions("/configure/companies")
       .then((list) => {
@@ -226,7 +267,36 @@ function VoucherEntryForm() {
       .heads(VOUCHER_TABS[0].id)
       .then((data) => setHeads(data.heads))
       .catch(() => toast.error("Failed to load the account titles"));
+    accountingSetupService
+      .costCenterOptions()
+      .then((list) => setCostCenters(list))
+      .catch(() => toast.error("Failed to load the cost centers"));
   }, []);
+
+  // active cheques of the Cheque Book, only Bank Payment and Contra use them
+  const loadCheques = useCallback(() => {
+    chequeBookService
+      .activeCheques({})
+      .then((list) => {
+        setCheques((old) => {
+          // keep the voucher's own cheque (update) on top
+          const kept: ActiveCheque[] = [];
+          for (const cheque of old) {
+            if (cheque.bank_id === 0) {
+              kept.push(cheque);
+            }
+          }
+          return [...kept, ...list];
+        });
+      })
+      .catch(() => toast.error("Failed to load the cheques"));
+  }, []);
+
+  useEffect(() => {
+    if (hasCheque) {
+      loadCheques();
+    }
+  }, [hasCheque, loadCheques]);
 
   // rate of the currency on the entry date
   useEffect(() => {
@@ -279,19 +349,7 @@ function VoucherEntryForm() {
     setChequeDate(value);
   }, []);
 
-  // totals of the list
-  let totalDr = 0;
-  let totalCr = 0;
-  for (const line of lines) {
-    if (line.transaction_type === DEBIT) {
-      totalDr = totalDr + toNumber(line.amount);
-    } else {
-      totalCr = totalCr + toNumber(line.amount);
-    }
-  }
-  totalDr = Math.round(totalDr * 100) / 100;
-  totalCr = Math.round(totalCr * 100) / 100;
-  const difference = Math.round((totalDr - totalCr) * 100) / 100;
+  const totals = totalsOf(lines);
 
   function headTitle(id: number) {
     for (const head of heads) {
@@ -300,6 +358,33 @@ function VoucherEntryForm() {
       }
     }
     return "";
+  }
+
+  function centerTitle(id: number | null) {
+    if (!id) {
+      return "";
+    }
+    for (const center of costCenters) {
+      if (center.value === id) {
+        return center.label;
+      }
+    }
+    return "";
+  }
+
+  // the add form gets the side and the amount that balance the list
+  function fillBalance(list: VoucherLine[]) {
+    const difference = totalsOf(list).difference;
+    if (difference > 0) {
+      setEntrySide(String(CREDIT));
+      setEntryAmount(String(difference));
+    } else if (difference < 0) {
+      setEntrySide(String(DEBIT));
+      setEntryAmount(String(-difference));
+    } else {
+      setEntrySide(String(CREDIT));
+      setEntryAmount("");
+    }
   }
 
   // a voucher is one type, so the list is cleared when the type changes
@@ -319,56 +404,77 @@ function VoucherEntryForm() {
     saveType(newType);
   }
 
+  // like parts_bazar: picking a cheque puts its bank in the add form as the Cr side
+  function pickCheque(value: string | number | null) {
+    if (!value) {
+      setChequeId(null);
+      setChequeNo("");
+      return;
+    }
+    const id = Number(value);
+    setChequeId(id);
+    for (const cheque of cheques) {
+      if (cheque.id !== id) {
+        continue;
+      }
+      setChequeNo(cheque.cheque_no);
+      if (cheque.bank_id === 0) {
+        continue;
+      }
+      let bankAdded = false;
+      for (const line of lines) {
+        if (line.ca_id === cheque.bank_id) {
+          bankAdded = true;
+        }
+      }
+      if (!bankAdded) {
+        setEntryCa(cheque.bank_id);
+        setEntrySide(String(CREDIT));
+        if (totals.difference > 0) {
+          setEntryAmount(String(totals.difference));
+        }
+      }
+    }
+  }
+
   function addLine() {
     setError("");
-    if (!caId) {
+    if (!entryCa) {
       setError("Please select an account title!");
       return;
     }
-    if (!(toNumber(amount) > 0)) {
+    if (!(toNumber(entryAmount) > 0)) {
       setError("Please Input Amount!");
       return;
     }
+    // like parts_bazar, one head can come again only with another cost center
     for (const line of lines) {
-      if (line.ca_id === caId) {
+      if (line.ca_id === entryCa && line.cost_center_id === entryCenter) {
         setError("Already added!");
         return;
       }
     }
 
-    const newLine: VoucherLine = { ca_id: caId, title: headTitle(caId), transaction_type: Number(side), amount: amount };
+    const newLine: VoucherLine = {
+      ca_id: entryCa,
+      title: headTitle(entryCa),
+      transaction_type: Number(entrySide),
+      amount: entryAmount,
+      cost_center_id: entryCenter,
+      cost_center: centerTitle(entryCenter),
+    };
     const newLines = [...lines, newLine];
     setLines(newLines);
-
-    // the next line gets the side and the amount that balance the list
-    let newDr = 0;
-    let newCr = 0;
-    for (const line of newLines) {
-      if (line.transaction_type === DEBIT) {
-        newDr = newDr + toNumber(line.amount);
-      } else {
-        newCr = newCr + toNumber(line.amount);
-      }
-    }
-    const newDifference = Math.round((newDr - newCr) * 100) / 100;
-    if (newDifference > 0) {
-      setSide(String(CREDIT));
-      setAmount(String(newDifference));
-    } else if (newDifference < 0) {
-      setSide(String(DEBIT));
-      setAmount(String(-newDifference));
-    } else {
-      setSide(String(CREDIT));
-      setAmount("");
-    }
-    setCaId(null);
+    setEntryCa(null);
+    fillBalance(newLines);
   }
 
-  function changeLineAmount(index: number, value: string) {
+  // typing in a line's Dr or Cr cell moves the line to that side
+  function changeLineAmount(index: number, side: number, value: string) {
     const newLines: VoucherLine[] = [];
     for (let i = 0; i < lines.length; i++) {
       if (i === index) {
-        newLines.push({ ...lines[i], amount: value });
+        newLines.push({ ...lines[i], transaction_type: side, amount: value });
       } else {
         newLines.push(lines[i]);
       }
@@ -392,6 +498,7 @@ function VoucherEntryForm() {
       }
     }
     setLines(newLines);
+    fillBalance(newLines);
   }
 
   function clearVoucher() {
@@ -399,19 +506,25 @@ function VoucherEntryForm() {
     setNarration("");
     setBillNo("");
     setChalanNo("");
+    setChequeId(null);
     setChequeNo("");
     setChequeDate("");
     setPaymentType("");
     setPayTo("");
-    setCaId(null);
-    setSide(String(DEBIT));
-    setAmount("");
+    setEntryCa(null);
+    setEntryCenter(null);
+    setEntrySide(String(DEBIT));
+    setEntryAmount("");
     setError("");
     setFormKey(formKey + 1);
   }
 
   async function save() {
     setError("");
+    if (editBlocked) {
+      setError(editBlocked);
+      return;
+    }
     if (!companyId) {
       setError("Company cannot be blank.");
       return;
@@ -428,7 +541,7 @@ function VoucherEntryForm() {
       setError("No conversion rate of this currency for the Entry Date. Add it in Currency first.");
       return;
     }
-    if (totalDr === 0 || totalCr === 0) {
+    if (totals.dr === 0 || totals.cr === 0) {
       setError("Please add journal entries to the list!");
       return;
     }
@@ -438,22 +551,22 @@ function VoucherEntryForm() {
         return;
       }
     }
-    if (difference !== 0) {
+    if (totals.difference !== 0) {
       setError("Debit & Credit Balance is not equal!");
       return;
     }
 
     const payloadLines = [];
     for (const line of lines) {
-      payloadLines.push({ ca_id: line.ca_id, transaction_type: line.transaction_type, amount: line.amount });
+      payloadLines.push({ ca_id: line.ca_id, transaction_type: line.transaction_type, amount: line.amount, cost_center_id: line.cost_center_id });
     }
 
-    if (editBlocked) {
-      setError(editBlocked);
-      return;
+    let payloadChequeId: number | null = null;
+    if (hasCheque) {
+      payloadChequeId = chequeId;
     }
 
-    const payload = {
+    const payload: VoucherPayload = {
       company_id: companyId,
       voucher_type: voucherType,
       entry_date: entryDate,
@@ -465,43 +578,27 @@ function VoucherEntryForm() {
       cheque_date: chequeDate,
       payment_type: paymentType,
       pay_to: payTo,
+      cheque_id: payloadChequeId,
       lines: payloadLines,
     };
 
-    if (isEdit) {
-      try {
-        setSaving(true);
+    try {
+      setSaving(true);
+      if (isEdit) {
         const result = await journalEntryService.updateVoucher(editType, editNo, payload);
         toast.success(result.voucher_no + " successfully updated");
         router.push("/accounting/voucher-manage");
-      } catch (err) {
-        setError(apiErrorMessage(err, "Data not saved. Please solve the above errors!"));
-      } finally {
-        setSaving(false);
+        return;
       }
-      return;
-    }
-
-    try {
-      setSaving(true);
-      const result = await journalEntryService.save({
-        company_id: companyId,
-        voucher_type: voucherType,
-        entry_date: entryDate,
-        currency_id: currencyId,
-        narration: narration,
-        bill_no: billNo,
-        chalan_no: chalanNo,
-        cheque_no: chequeNo,
-        cheque_date: chequeDate,
-        payment_type: paymentType,
-        pay_to: payTo,
-        lines: payloadLines,
-      });
+      const result = await journalEntryService.save(payload);
       toast.success("Successfully Saved: " + result.voucher_no);
       // company, date, currency and type stay for the next voucher
       clearVoucher();
       loadNextNo();
+      if (hasCheque) {
+        // the used cheque leaves the active list
+        loadCheques();
+      }
     } catch (err) {
       setError(apiErrorMessage(err, "Data not saved. Please solve the above errors!"));
     } finally {
@@ -510,16 +607,13 @@ function VoucherEntryForm() {
   }
 
   let rateText = "—";
+  let rateClass = "text-gray-800 dark:text-white/90";
   if (rate !== null && rate > 0) {
     rateText = String(rate);
   }
   if (rate === 0) {
     rateText = "No rate for this date";
-  }
-
-  let differenceClass = "text-success-600 dark:text-success-500";
-  if (difference !== 0) {
-    differenceClass = "text-error-600 dark:text-error-400";
+    rateClass = "text-error-600 dark:text-error-400";
   }
 
   let saveLabel = "Save " + currentTab.label + " Voucher";
@@ -531,11 +625,9 @@ function VoucherEntryForm() {
   }
 
   let pageTitle = "Voucher Entry";
-  let pageDesc = "Pick the voucher type, add the Dr and Cr lines, and save when Total Dr and Total Cr are the same.";
   let permissions = ["voucher-entry.create"];
   if (isEdit) {
     pageTitle = "Update Voucher " + editVoucherNo;
-    pageDesc = "Change the lines and save. The voucher type and voucher no stay the same.";
     permissions = ["voucher-entry.edit"];
   }
 
@@ -547,215 +639,286 @@ function VoucherEntryForm() {
     voucherNoText = editVoucherNo;
   }
 
+  const balanced = lines.length > 0 && totals.dr > 0 && totals.difference === 0;
+  let differenceClass = "text-error-600 dark:text-error-400";
+  if (balanced) {
+    differenceClass = "text-success-600 dark:text-success-500";
+  }
+
+  const chequeOptions: { value: number; label: string }[] = [];
+  for (const cheque of cheques) {
+    chequeOptions.push({ value: cheque.id, label: chequeLabel(cheque) });
+  }
+
+  // Enter in the amount adds the line
+  function entryKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addLine();
+    }
+  }
+
   return (
     <AccessRoute requiredPermissions={permissions}>
       <div>
         <PageBreadcrumb items={[{ title: "Accounting" }, { title: pageTitle }]} />
-        <ComponentCard
-          title={pageTitle}
-          desc={pageDesc}
-          headerAction={
-            canManage && (
-              <Button type="button" size="sm" variant="outline" startIcon={<FiArrowLeft />} onClick={() => router.push("/accounting/voucher-manage")}>
-                Voucher Manage
-              </Button>
-            )
-          }
-        >
-          <div className="space-y-5">
-            {editBlocked && (
-              <div className="rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:border-warning-500/30 dark:bg-warning-500/10 dark:text-orange-400">{editBlocked}</div>
-            )}
 
-            {/* voucher type tabs, only the voucher's own type when updating */}
-            <div>
-              <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+          {/* left: the voucher */}
+          <div className="space-y-5">
+            <div className={cardClass}>
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-gray-800 dark:text-white/90">{pageTitle}</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">{currentTab.hint}</p>
+                </div>
+                {canManage && (
+                  <Button type="button" size="sm" variant="outline" startIcon={<FiArrowLeft />} onClick={() => router.push("/accounting/voucher-manage")}>
+                    Voucher Manage
+                  </Button>
+                )}
+              </div>
+
+              {editBlocked && (
+                <div className="mb-4 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-700 dark:border-warning-500/30 dark:bg-warning-500/10 dark:text-orange-400">{editBlocked}</div>
+              )}
+
+              {/* voucher type tabs, only the voucher's own type when updating */}
+              <div className="mb-5 flex flex-wrap gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-900">
                 {VOUCHER_TABS.map((tab) => {
-                  let tabClass = "border-gray-300 text-gray-700 hover:border-brand-300 hover:text-brand-600 dark:border-gray-700 dark:text-gray-300";
+                  let tabClass = "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white";
                   if (tab.id === voucherType) {
-                    tabClass = "border-brand-500 bg-brand-500 text-white shadow-theme-xs";
+                    tabClass = "bg-white text-brand-600 shadow-theme-xs dark:bg-gray-800 dark:text-brand-400";
                   } else if (isEdit) {
-                    tabClass = "cursor-not-allowed border-gray-200 text-gray-300 dark:border-gray-800 dark:text-gray-600";
+                    tabClass = "cursor-not-allowed text-gray-300 dark:text-gray-600";
                   }
                   return (
-                    <button key={tab.id} type="button" disabled={isEdit && tab.id !== voucherType} onClick={() => changeType(tab.id)} className={"rounded-lg border px-4 py-2 text-sm font-medium transition " + tabClass}>
+                    <button
+                      key={tab.id}
+                      type="button"
+                      disabled={isEdit && tab.id !== voucherType}
+                      onClick={() => changeType(tab.id)}
+                      className={"flex-1 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition " + tabClass}
+                    >
                       {tab.label}
                     </button>
                   );
                 })}
               </div>
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{currentTab.hint}</p>
+
+              {/* voucher info */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div>
+                  <Label required>Company</Label>
+                  <ReactSelect options={companies} value={companyId || null} isClearable={false} placeholder="select" onChange={(value) => setCompanyId(value ? String(value) : "")} />
+                </div>
+                <div>
+                  <Label required>Entry Date</Label>
+                  <DatePicker key={"entry-date-" + formKey} id="entry_date" defaultDate={entryDate || undefined} onChange={changeEntryDate} placeholder="Select date" />
+                </div>
+                <div>
+                  <Label required>Currency</Label>
+                  <ReactSelect options={currencies} value={currencyId || null} isClearable={false} placeholder="select" isDisabled={lines.length > 0} onChange={(value) => setCurrencyId(value ? String(value) : "")} />
+                </div>
+              </div>
+
+              {hasCheque && (
+                <div key={"cheque-" + formKey} className="mt-4 rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Cheque</p>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="lg:col-span-2">
+                      <Label>Cheque (from Cheque Book)</Label>
+                      <ReactSelect options={chequeOptions} value={chequeId} placeholder="Search an active cheque" onChange={pickCheque} />
+                    </div>
+                    <div>
+                      <Label>Cheque No</Label>
+                      <input type="text" value={chequeNo} maxLength={255} disabled={chequeId !== null} placeholder="Or type it" onChange={(e) => setChequeNo(e.target.value)} className={inputClass} />
+                    </div>
+                    <div>
+                      <Label>Cheque Date</Label>
+                      <DatePicker id="cheque_date" defaultDate={chequeDate || undefined} onChange={changeChequeDate} placeholder="Select date" />
+                    </div>
+                    <div>
+                      <Label>Payment Type</Label>
+                      <ReactSelect options={PAYMENT_TYPES} value={paymentType || null} placeholder="Select" onChange={(value) => setPaymentType(value ? String(value) : "")} />
+                    </div>
+                    <div>
+                      <Label>Pay To</Label>
+                      <input type="text" value={payTo} maxLength={255} onChange={(e) => setPayTo(e.target.value)} className={inputClass} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {hasBill && (
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div>
+                    <Label>Bill No</Label>
+                    <input type="text" value={billNo} maxLength={255} onChange={(e) => setBillNo(e.target.value)} className={inputClass} />
+                  </div>
+                  <div>
+                    <Label>Chalan No</Label>
+                    <input type="text" value={chalanNo} maxLength={255} onChange={(e) => setChalanNo(e.target.value)} className={inputClass} />
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* voucher info */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-              <div>
-                <Label required>Company</Label>
-                <ReactSelect options={companies} value={companyId || null} isClearable={false} placeholder="select" onChange={(value) => setCompanyId(value ? String(value) : "")} />
+            {/* the lines */}
+            <div className={cardClass}>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-base font-semibold text-gray-800 dark:text-white/90">Journal Lines</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Pick the account, put the amount and press Enter or Add</p>
               </div>
-              <div>
-                <Label required>Entry Date</Label>
-                <DatePicker key={"entry-date-" + formKey} id="entry_date" defaultDate={entryDate || undefined} onChange={changeEntryDate} placeholder="Select date" />
-              </div>
-              <div>
-                <Label>Voucher No</Label>
-                <div className={readOnlyClass} title="Will Auto Generate on save">
-                  <span className="font-mono">{voucherNoText}</span>
-                </div>
-              </div>
-              <div>
-                <Label required>Currency</Label>
-                <ReactSelect options={currencies} value={currencyId || null} isClearable={false} placeholder="select" isDisabled={lines.length > 0} onChange={(value) => setCurrencyId(value ? String(value) : "")} />
-              </div>
-              <div>
-                <Label>Conversion Rate</Label>
-                <div className={readOnlyClass}>{rateText}</div>
-              </div>
-            </div>
 
-            {hasCheque && (
-              <div key={"cheque-" + formKey} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div>
-                  <Label>Cheque No</Label>
-                  <input type="text" value={chequeNo} maxLength={255} onChange={(e) => setChequeNo(e.target.value)} className={inputClass} />
-                </div>
-                <div>
-                  <Label>Cheque Date</Label>
-                  <DatePicker id="cheque_date" defaultDate={chequeDate || undefined} onChange={changeChequeDate} placeholder="Select date" />
-                </div>
-                <div>
-                  <Label>Payment Type</Label>
-                  <ReactSelect options={PAYMENT_TYPES} value={paymentType || null} placeholder="Select" onChange={(value) => setPaymentType(value ? String(value) : "")} />
-                </div>
-                <div>
-                  <Label>Pay To</Label>
-                  <input type="text" value={payTo} maxLength={255} onChange={(e) => setPayTo(e.target.value)} className={inputClass} />
-                </div>
-              </div>
-            )}
-
-            {hasBill && (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div>
-                  <Label>Bill No</Label>
-                  <input type="text" value={billNo} maxLength={255} onChange={(e) => setBillNo(e.target.value)} className={inputClass} />
-                </div>
-                <div>
-                  <Label>Chalan No</Label>
-                  <input type="text" value={chalanNo} maxLength={255} onChange={(e) => setChalanNo(e.target.value)} className={inputClass} />
+              {/* add a line */}
+              <div className="mb-4 rounded-xl border border-dashed border-brand-200 bg-brand-25 p-4 dark:border-brand-500/30 dark:bg-brand-500/[0.04]">
+                <div className="grid grid-cols-1 items-end gap-3 md:grid-cols-12">
+                  <div className="md:col-span-4">
+                    <Label required>Account Title</Label>
+                    <ReactSelect options={heads} value={entryCa} placeholder="Search account title" onChange={(value) => setEntryCa(value ? Number(value) : null)} />
+                  </div>
+                  <div className="md:col-span-3">
+                    <Label>Cost Center</Label>
+                    <ReactSelect options={costCenters} value={entryCenter} placeholder="Optional" onChange={(value) => setEntryCenter(value ? Number(value) : null)} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <Label required>Dr / Cr</Label>
+                    <ReactSelect options={DR_CR} value={entrySide} isClearable={false} isSearchable={false} onChange={(value) => setEntrySide(value ? String(value) : String(DEBIT))} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <Label required>Amount</Label>
+                    <input type="number" value={entryAmount} min={0} step="0.01" placeholder="0.00" onWheel={blurOnWheel} onChange={(e) => setEntryAmount(e.target.value)} onKeyDown={entryKeyDown} className={amountClass} />
+                  </div>
+                  <div className="md:col-span-1">
+                    <Button type="button" size="sm" className="h-10 w-full" onClick={addLine} startIcon={<FiPlus />}>
+                      Add
+                    </Button>
+                  </div>
                 </div>
               </div>
-            )}
 
-            {/* add a line */}
-            <div className="rounded-xl border border-dashed border-gray-300 p-4 dark:border-gray-700">
-              <div className="grid grid-cols-1 items-end gap-3 md:grid-cols-12">
-                <div className="md:col-span-6">
-                  <Label required>Account Title</Label>
-                  <ReactSelect options={heads} value={caId} placeholder="Type to search" onChange={(value) => setCaId(value ? Number(value) : null)} />
-                </div>
-                <div className="md:col-span-2">
-                  <Label required>Dr / Cr</Label>
-                  <ReactSelect options={DR_CR} value={side} isClearable={false} isSearchable={false} onChange={(value) => setSide(value ? String(value) : String(DEBIT))} />
-                </div>
-                <div className="md:col-span-2">
-                  <Label required>Amount</Label>
-                  <input
-                    type="number"
-                    value={amount}
-                    min={0}
-                    step="0.01"
-                    placeholder="0.00"
-                    onWheel={blurOnWheel}
-                    onChange={(e) => setAmount(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        addLine();
-                      }
-                    }}
-                    className={inputClass}
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <Button type="button" size="sm" className="h-10 w-full" onClick={addLine} startIcon={<FiPlus />}>
-                    Add
-                  </Button>
-                </div>
-              </div>
-            </div>
+              {error && (
+                <div className="mb-3 rounded-md border border-error-200 bg-error-50 px-3 py-2 text-sm text-error-600 dark:border-error-500/30 dark:bg-error-500/10 dark:text-error-400">{error}</div>
+              )}
 
-            {error && (
-              <div className="rounded-md border border-error-200 bg-error-50 px-3 py-2 text-sm text-error-600 dark:border-error-500/30 dark:bg-error-500/10 dark:text-error-400">{error}</div>
-            )}
-
-            {/* added list */}
-            <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800">
-              <table className="w-full min-w-[640px] text-sm">
-                <thead className="bg-gray-50 text-left text-xs font-semibold uppercase text-gray-500 dark:bg-white/[0.03] dark:text-gray-400">
-                  <tr>
-                    <th className="w-12 px-3 py-2.5">SL</th>
-                    <th className="px-3 py-2.5">Account Title</th>
-                    <th className="w-44 px-3 py-2.5 text-right">Dr (Amount)</th>
-                    <th className="w-44 px-3 py-2.5 text-right">Cr (Amount)</th>
-                    <th className="w-16 px-3 py-2.5 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                  {lines.length === 0 && (
+              <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800">
+                <table className="w-full min-w-[760px] text-sm">
+                  <thead className="bg-gray-50 text-left text-xs font-semibold uppercase text-gray-500 dark:bg-white/[0.03] dark:text-gray-400">
                     <tr>
-                      <td colSpan={5} className="px-3 py-6 text-center text-gray-400">No line added yet.</td>
+                      <th className="w-10 px-3 py-2.5">#</th>
+                      <th className="px-3 py-2.5">Account Title</th>
+                      <th className="w-56 px-3 py-2.5">Cost Center</th>
+                      <th className="w-36 px-3 py-2.5 text-right">Dr</th>
+                      <th className="w-36 px-3 py-2.5 text-right">Cr</th>
+                      <th className="w-12 px-3 py-2.5"></th>
                     </tr>
-                  )}
-                  {lines.map((line, index) => (
-                    <tr key={line.ca_id} className="text-gray-700 dark:text-gray-300">
-                      <td className="px-3 py-2">{index + 1}</td>
-                      <td className="px-3 py-2">{line.title}</td>
-                      <td className="px-3 py-2">
-                        {line.transaction_type === DEBIT && (
-                          <input type="number" value={line.amount} min={0} step="0.01" onWheel={blurOnWheel} onChange={(e) => changeLineAmount(index, e.target.value)} className={inputClass + " h-9 text-right"} />
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        {line.transaction_type === CREDIT && (
-                          <input type="number" value={line.amount} min={0} step="0.01" onWheel={blurOnWheel} onChange={(e) => changeLineAmount(index, e.target.value)} className={inputClass + " h-9 text-right"} />
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        <button type="button" title="Remove" onClick={() => removeLine(index)} className="rounded-md p-1.5 text-error-500 hover:bg-error-50 dark:hover:bg-error-500/10">
-                          <FiTrash2 />
-                        </button>
-                      </td>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {lines.map((line, index) => {
+                      let drValue = "";
+                      let crValue = "";
+                      if (line.transaction_type === DEBIT) {
+                        drValue = line.amount;
+                      } else {
+                        crValue = line.amount;
+                      }
+                      return (
+                        <tr key={line.ca_id + "-" + line.cost_center_id} className="text-gray-700 dark:text-gray-300">
+                          <td className="px-3 py-2 text-gray-400">{index + 1}</td>
+                          <td className="px-3 py-2 font-medium text-gray-800 dark:text-white/90">{line.title}</td>
+                          <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{line.cost_center}</td>
+                          <td className="px-3 py-2">
+                            <input type="number" value={drValue} min={0} step="0.01" placeholder="—" onWheel={blurOnWheel} onChange={(e) => changeLineAmount(index, DEBIT, e.target.value)} className={amountClass + " h-9"} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="number" value={crValue} min={0} step="0.01" placeholder="—" onWheel={blurOnWheel} onChange={(e) => changeLineAmount(index, CREDIT, e.target.value)} className={amountClass + " h-9"} />
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <button type="button" title="Remove" onClick={() => removeLine(index)} className="rounded-md p-1.5 text-gray-400 hover:bg-error-50 hover:text-error-500 dark:hover:bg-error-500/10">
+                              <FiTrash2 />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {lines.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-6 text-center text-gray-400">No line added yet.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                  <tfoot className="bg-gray-50 font-semibold text-gray-800 dark:bg-white/[0.03] dark:text-white/90">
+                    <tr>
+                      <td colSpan={3} className="px-3 py-2.5 text-right">Total</td>
+                      <td className="px-3 py-2.5 text-right">{formatMoney(totals.dr)}</td>
+                      <td className="px-3 py-2.5 text-right">{formatMoney(totals.cr)}</td>
+                      <td></td>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-gray-50 font-semibold text-gray-800 dark:bg-white/[0.03] dark:text-white/90">
-                  <tr>
-                    <td colSpan={2} className="px-3 py-2.5 text-right">Total</td>
-                    <td className="px-3 py-2.5 text-right">{formatMoney(totalDr)}</td>
-                    <td className="px-3 py-2.5 text-right">{formatMoney(totalCr)}</td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td colSpan={2} className="px-3 py-2.5 text-right">Difference</td>
-                    <td colSpan={2} className={"px-3 py-2.5 text-center " + differenceClass}>{formatMoney(difference)}</td>
-                    <td></td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
+                  </tfoot>
+                </table>
+              </div>
 
-            <div>
-              <Label>Narration</Label>
-              <textarea value={narration} maxLength={512} rows={2} onChange={(e) => setNarration(e.target.value)} className={inputClass + " h-auto py-2"} />
-            </div>
-
-            <div className="flex justify-end gap-3">
-              {isEdit && <Button type="button" size="sm" variant="outline" onClick={() => router.push("/accounting/voucher-manage")}>Cancel</Button>}
-              {!isEdit && <Button type="button" size="sm" variant="outline" onClick={clearVoucher}>Clear</Button>}
-              <Button type="button" size="sm" onClick={save} disabled={saving || editBlocked !== ""}>{saveLabel}</Button>
+              <div className="mt-4">
+                <Label>Narration</Label>
+                <textarea value={narration} maxLength={512} rows={2} onChange={(e) => setNarration(e.target.value)} className={inputClass + " h-auto py-2"} />
+              </div>
             </div>
           </div>
-        </ComponentCard>
+
+          {/* right: summary and save */}
+          <div>
+            <div className={cardClass + " space-y-4 xl:sticky xl:top-24"}>
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{currentTab.label} Voucher</p>
+                <p className="mt-1 font-mono text-xl font-semibold text-gray-800 dark:text-white/90" title="Will Auto Generate on save">{voucherNoText}</p>
+              </div>
+              <dl className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <dt className="text-gray-500 dark:text-gray-400">Conversion Rate</dt>
+                  <dd className={rateClass}>{rateText}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-gray-500 dark:text-gray-400">Lines</dt>
+                  <dd className="text-gray-800 dark:text-white/90">{lines.length}</dd>
+                </div>
+                <div className="flex justify-between border-t border-gray-100 pt-2 dark:border-gray-800">
+                  <dt className="text-gray-500 dark:text-gray-400">Total Dr</dt>
+                  <dd className="font-semibold text-gray-800 dark:text-white/90">{formatMoney(totals.dr)}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-gray-500 dark:text-gray-400">Total Cr</dt>
+                  <dd className="font-semibold text-gray-800 dark:text-white/90">{formatMoney(totals.cr)}</dd>
+                </div>
+                <div className="flex justify-between border-t border-gray-100 pt-2 dark:border-gray-800">
+                  <dt className="text-gray-500 dark:text-gray-400">Difference</dt>
+                  <dd className={"font-semibold " + differenceClass}>{formatMoney(totals.difference)}</dd>
+                </div>
+              </dl>
+              {balanced && (
+                <p className="flex items-center gap-1.5 text-sm text-success-600 dark:text-success-500">
+                  <FiCheckCircle /> Balanced, ready to save
+                </p>
+              )}
+              <div className="space-y-2">
+                <Button type="button" className="w-full" onClick={save} disabled={saving || editBlocked !== ""}>
+                  {saveLabel}
+                </Button>
+                {isEdit && (
+                  <Button type="button" variant="outline" className="w-full" onClick={() => router.push("/accounting/voucher-manage")}>
+                    Cancel
+                  </Button>
+                )}
+                {!isEdit && (
+                  <Button type="button" variant="outline" className="w-full" onClick={clearVoucher}>
+                    Clear
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </AccessRoute>
   );

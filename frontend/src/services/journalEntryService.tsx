@@ -30,6 +30,8 @@ export interface VoucherLine {
   title: string;
   transaction_type: number;
   amount: string;
+  cost_center_id: number | null;
+  cost_center: string;
 }
 
 export interface VoucherPayload {
@@ -44,11 +46,24 @@ export interface VoucherPayload {
   cheque_date: string;
   payment_type: string;
   pay_to: string;
-  lines: { ca_id: number; transaction_type: number; amount: string }[];
+  cheque_id: number | null; // a leaf of the Cheque Book
+  lines: { ca_id: number; transaction_type: number; amount: string; cost_center_id: number | null }[];
 }
 
 type UserName = { id: number; name: string } | null;
 type Account = { id: number; code: string; title: string } | null;
+type CostCenterName = { id: number; title: string; code: string | null } | null;
+
+// "title (code)" of a cost center, like parts_bazar nameOfThisWithCode
+export function costCenterName(center: CostCenterName) {
+  if (!center) {
+    return "";
+  }
+  if (center.code) {
+    return center.title + " (" + center.code + ")";
+  }
+  return center.title;
+}
 
 // one line of a voucher in the Voucher Manage list
 export interface JournalRow {
@@ -67,6 +82,7 @@ export interface JournalRow {
   is_locked: boolean | number;
   created_at: string | null;
   account: Account;
+  cost_center: CostCenterName;
   created_by: UserName;
 }
 
@@ -82,6 +98,8 @@ export interface VoucherDetail {
   narration: string | null;
   cheque_no: string | null;
   cheque_date: string | null;
+  cheque_id: number | null;
+  cheque_book_no: string | null;
   pay_to: string | null;
   payment_type: number | null;
   company_id: number | null;
@@ -91,7 +109,7 @@ export interface VoucherDetail {
   chalan_no: string | null;
   created_by: UserName;
   created_at: string | null;
-  lines: { id: number; transaction_type: number; amount: string; amount_in_foreign_currency: string; account: Account }[];
+  lines: { id: number; transaction_type: number; amount: string; amount_in_foreign_currency: string; cost_center_id: number | null; account: Account; cost_center: CostCenterName }[];
 }
 
 // where an entry comes from, only manual vouchers for now

@@ -72,6 +72,46 @@ export function voucherNo(format: string, entryNo: number | string) {
   return format + "# " + entryNo;
 }
 
+// ---------- Cost Category / Cost Center ----------
+
+// status of a cost category / cost center, like parts_bazar
+export const COST_STATUS: Option[] = [
+  { value: "1", label: "Active" },
+  { value: "2", label: "Inactive" },
+];
+
+export interface CostCategory {
+  id: number;
+  title: string;
+  status: number;
+  created_at: string | null;
+  updated_at: string | null;
+  created_by: UserName;
+  updated_by: UserName;
+}
+
+export interface CostCenter {
+  id: number;
+  cost_category_id: number;
+  cost_category: { id: number; title: string } | null;
+  title: string;
+  code: string | null;
+  status: number;
+  created_at: string | null;
+  updated_at: string | null;
+  created_by: UserName;
+  updated_by: UserName;
+}
+
+export interface CostCenterPayload {
+  cost_category_id: string;
+  title: string;
+  code: string;
+  status: string;
+}
+
+const COST_CATEGORY = "/accounting/cost-categories";
+const COST_CENTER = "/accounting/cost-centers";
 const VOUCHER_TYPE = "/accounting/voucher-types";
 const CURRENCY = "/accounting/currency-conversions";
 const OPENING = "/accounting/chart-of-ac-openings";
@@ -135,6 +175,39 @@ class AccountingSetupService {
 
   async deleteOpening(id: number) {
     await api.delete(`${OPENING}/${id}`);
+  }
+
+  async getCostCategories(filters: Record<string, string | number> = {}): Promise<CostCategory[]> {
+    const res = await api.get(COST_CATEGORY, { params: removeEmpty(filters) });
+    return res.data.data;
+  }
+
+  // status goes only on update, a new category is always Active
+  async saveCostCategory(data: { title: string; status: string }, id?: number) {
+    if (id) {
+      await api.put(`${COST_CATEGORY}/${id}`, data);
+    } else {
+      await api.post(COST_CATEGORY, { title: data.title });
+    }
+  }
+
+  async getCostCenters(filters: Record<string, string | number> = {}) {
+    const res = await api.get(COST_CENTER, { params: removeEmpty(filters) });
+    return res.data.data as { data: CostCenter[]; categories: Option[] };
+  }
+
+  async saveCostCenter(data: CostCenterPayload, id?: number) {
+    if (id) {
+      await api.put(`${COST_CENTER}/${id}`, data);
+    } else {
+      await api.post(COST_CENTER, { cost_category_id: data.cost_category_id, title: data.title, code: data.code });
+    }
+  }
+
+  // active cost centers as "title (code)", for the voucher line
+  async costCenterOptions(): Promise<{ value: number; label: string }[]> {
+    const res = await api.get(`${COST_CENTER}/options`);
+    return res.data.data;
   }
 }
 

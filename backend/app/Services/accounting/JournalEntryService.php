@@ -3,6 +3,9 @@
 namespace App\Services\accounting;
 
 use App\Models\accounting\ChartOfAc;
+use App\Models\accounting\ChequeBook;
+use App\Models\accounting\ChequeEntry;
+use App\Models\accounting\CostCenter;
 use App\Models\accounting\JournalEntry;
 use App\Models\accounting\VoucherType;
 use Illuminate\Support\Facades\Auth;
@@ -17,7 +20,7 @@ class JournalEntryService
     // voucher types that have the cheque fields on the form
     const CHEQUE_TYPES = [VoucherType::CONTRA, VoucherType::BANK_PAYMENT];
 
-    public function __construct(private CurrencyConversionService $currencyService)
+    public function __construct(private CurrencyConversionService $currencyService, private ChequeEntryService $chequeEntryService)
     {
     }
 
@@ -119,7 +122,7 @@ class JournalEntryService
         $rows = [];
         if (count($result->items()) > 0) {
             $lines = JournalEntry::query()
-                ->with(['account:id,code,title', 'createdBy:id,name'])
+                ->with(['account:id,code,title', 'costCenter:id,title,code', 'createdBy:id,name'])
                 ->where(function ($query) use ($result) {
                     foreach ($result->items() as $voucher) {
                         $query->orWhere(function ($one) use ($voucher) {
@@ -153,7 +156,7 @@ class JournalEntryService
     public function findVoucher($voucherType, $entryNo)
     {
         $lines = JournalEntry::query()
-            ->with(['account:id,code,title', 'createdBy:id,name'])
+            ->with(['account:id,code,title', 'costCenter:id,title,code', 'createdBy:id,name'])
             ->where('voucher_type', $voucherType)
             ->where('entry_no', $entryNo)
             ->orderBy('transaction_type')
@@ -168,6 +171,15 @@ class JournalEntryService
         $type = VoucherType::find($voucherType);
         $company = DB::table('companies')->where('id', $first->company_id)->first(['id', 'name', 'address']);
 
+        // the cheque book leaf this voucher wrote, for the update form
+        $chequeId = null;
+        $chequeBookNo = null;
+        $chequeEntry = ChequeEntry::where('voucher_type', $voucherType)->where('entry_no', $entryNo)->first();
+        if ($chequeEntry) {
+            $chequeId = $chequeEntry->cheque_book_id;
+            $chequeBookNo = $chequeEntry->cheque_book_no;
+        }
+
         return [
             'voucher_type' => (int) $voucherType,
             'voucher_type_name' => $type ? $type->name . ' Voucher' : '',
@@ -180,6 +192,8 @@ class JournalEntryService
             'narration' => $first->narration,
             'cheque_no' => $first->cheque_no,
             'cheque_date' => $first->cheque_date,
+            'cheque_id' => $chequeId,
+            'cheque_book_no' => $chequeBookNo,
             'pay_to' => $first->pay_to,
             'payment_type' => $first->payment_type,
             'company_id' => $first->company_id,
@@ -211,6 +225,8 @@ class JournalEntryService
 
         DB::transaction(function () use ($voucherType, $entryNo) {
             JournalEntry::where('voucher_type', $voucherType)->where('entry_no', $entryNo)->delete();
+            // like parts_bazar: the cheque entry goes and the cheque leaf is ACTIVE again
+            $this->chequeEntryService->freeCheque($voucherType, $entryNo);
         });
 
         return VoucherType::voucherNo($voucherType, $entryNo);
@@ -268,12 +284,35 @@ class JournalEntryService
     {
         $voucherType = (int) $data['voucher_type'];
 
+        // cost centers already on the old voucher may be kept even when they are inactive now
+        $oldCenters = [];
+        if ($oldFirst) {
+            $oldCenters = JournalEntry::where('voucher_type', $oldFirst->voucher_type)
+                ->where('entry_no', $oldFirst->entry_no)
+                ->whereNotNull('cost_center_id')
+                ->pluck('cost_center_id')
+                ->all();
+        }
+
         // every line: a head from the list, no line twice, Dr and Cr totals the same
         $totalDr = 0;
         $totalCr = 0;
         $usedHeads = [];
         $accounts = [];
         foreach ($data['lines'] as $line) {
+            // a line may have a cost center, like parts_bazar it must be an active one
+            $costCenterId = null;
+            if (!empty($line['cost_center_id'])) {
+                $costCenter = CostCenter::find($line['cost_center_id']);
+                if (!$costCenter) {
+                    throw new \RuntimeException('Please select a valid cost center!');
+                }
+                if ($costCenter->status != CostCenter::ACTIVE && !in_array($costCenter->id, $oldCenters)) {
+                    throw new \RuntimeException('Cost center ' . $costCenter->title . ' is inactive.');
+                }
+                $costCenterId = $costCenter->id;
+            }
+
             $account = ChartOfAc::find($line['ca_id']);
             if (!$account || $account->root == ChartOfAc::MAIN_ROOT) {
                 throw new \RuntimeException('Please select an account title!');
@@ -282,10 +321,12 @@ class JournalEntryService
             if ($hasChild) {
                 throw new \RuntimeException('A group head can not be used in a voucher (' . $account->title . ').');
             }
-            if (in_array($account->id, $usedHeads)) {
+            // like parts_bazar, one head can come again only with another cost center
+            $lineKey = $account->id . '-' . $costCenterId;
+            if (in_array($lineKey, $usedHeads)) {
                 throw new \RuntimeException('Already added! (' . $account->title . ')');
             }
-            $usedHeads[] = $account->id;
+            $usedHeads[] = $lineKey;
             $accounts[$account->id] = $account;
 
             if ($line['transaction_type'] == JournalEntry::DEBIT) {
@@ -320,14 +361,34 @@ class JournalEntryService
         $chequeDate = null;
         $paymentType = null;
         $payTo = null;
+        $chequeLeaf = null;
         if (in_array($voucherType, self::CHEQUE_TYPES)) {
             $chequeNo = $data['cheque_no'] ?? null;
             $chequeDate = $data['cheque_date'] ?? null;
             $paymentType = $data['payment_type'] ?? null;
             $payTo = $data['pay_to'] ?? null;
+
+            // a cheque picked from the Cheque Book: it must be ACTIVE, or the one this voucher already uses
+            if (!empty($data['cheque_id'])) {
+                $chequeLeaf = ChequeBook::find($data['cheque_id']);
+                if (!$chequeLeaf) {
+                    throw new \RuntimeException('Please select a valid cheque!');
+                }
+                $ownLeaf = false;
+                if ($oldFirst) {
+                    $ownLeaf = ChequeEntry::where('voucher_type', $oldFirst->voucher_type)
+                        ->where('entry_no', $oldFirst->entry_no)
+                        ->where('cheque_book_id', $chequeLeaf->id)
+                        ->exists();
+                }
+                if ($chequeLeaf->status != ChequeBook::ACTIVE && !$ownLeaf) {
+                    throw new \RuntimeException('Cheque ' . $chequeLeaf->cheque_no . ' is not active, pick another cheque.');
+                }
+                $chequeNo = $chequeLeaf->cheque_no;
+            }
         }
 
-        return DB::transaction(function () use ($data, $voucherType, $accounts, $rate, $billNo, $chalanNo, $chequeNo, $chequeDate, $paymentType, $payTo, $oldFirst) {
+        return DB::transaction(function () use ($data, $voucherType, $accounts, $rate, $billNo, $chalanNo, $chequeNo, $chequeDate, $paymentType, $payTo, $oldFirst, $chequeLeaf) {
             // lock the rows of this type, so two saves at once can not get the same no
             JournalEntry::where('voucher_type', $voucherType)->lockForUpdate()->count();
 
@@ -339,13 +400,24 @@ class JournalEntryService
                 $createdAt = $oldFirst->created_at;
                 $updatedBy = Auth::id();
                 JournalEntry::where('voucher_type', $voucherType)->where('entry_no', $entryNo)->delete();
+
+                // the old cheque is freed; when the same cheque is kept, its clearance date stays
+                $oldClearance = null;
+                $oldEntry = ChequeEntry::where('voucher_type', $voucherType)->where('entry_no', $entryNo)->first();
+                if ($oldEntry && $chequeLeaf && $oldEntry->cheque_book_id == $chequeLeaf->id) {
+                    $oldClearance = $oldEntry->clearance_date;
+                }
+                $this->chequeEntryService->freeCheque($voucherType, $entryNo);
             } else {
                 $serial = $this->nextSerial($voucherType, $data['entry_date']);
                 $entryNo = $this->formattedNo($data['entry_date'], $serial);
                 $createdBy = Auth::id();
                 $createdAt = null;
                 $updatedBy = null;
+                $oldClearance = null;
             }
+
+            $totalDrBdt = 0;
 
             foreach ($data['lines'] as $line) {
                 $account = $accounts[$line['ca_id']];
@@ -359,6 +431,10 @@ class JournalEntryService
                 $entry->ca_id = $account->id;
                 $entry->main_ca = $account->main_root_id;
                 $entry->transaction_type = $line['transaction_type'];
+                $entry->cost_center_id = null;
+                if (!empty($line['cost_center_id'])) {
+                    $entry->cost_center_id = $line['cost_center_id'];
+                }
                 $entry->currency_id = $data['currency_id'];
                 $entry->currency_conversion_rate = $rate;
                 $entry->amount_in_foreign_currency = $line['amount'];
@@ -378,6 +454,28 @@ class JournalEntryService
                     $entry->created_at = $createdAt;
                 }
                 $entry->save();
+
+                if ($entry->transaction_type == JournalEntry::DEBIT) {
+                    $totalDrBdt = $totalDrBdt + $entry->amount;
+                }
+            }
+
+            // the picked cheque becomes USED and goes to the Cheque Entry register (parts_bazar)
+            if ($chequeLeaf) {
+                $chequeEntry = $this->chequeEntryService->useCheque($chequeLeaf->fresh(), [
+                    'voucher_type' => $voucherType,
+                    'entry_no' => $entryNo,
+                    'entry_date' => $data['entry_date'],
+                    'payment_type' => $paymentType,
+                    'pay_to' => $payTo,
+                    'cheque_date' => $chequeDate,
+                    'amount' => round($totalDrBdt, 2),
+                    'narration' => $data['narration'] ?? null,
+                ]);
+                if ($oldClearance) {
+                    $chequeEntry->clearance_date = $oldClearance;
+                    $chequeEntry->save();
+                }
             }
 
             return [

@@ -41,6 +41,10 @@ use App\Http\Controllers\api\accounting\ChartOfAcController;
 use App\Http\Controllers\api\accounting\ChartOfAcOpeningController;
 use App\Http\Controllers\api\accounting\CurrencyConversionController;
 use App\Http\Controllers\api\accounting\VoucherTypeController;
+use App\Http\Controllers\api\accounting\CostCategoryController;
+use App\Http\Controllers\api\accounting\CostCenterController;
+use App\Http\Controllers\api\accounting\ChequeBookController;
+use App\Http\Controllers\api\accounting\ChequeEntryController;
 use App\Http\Controllers\api\accounting\JournalEntryController;
 use App\Helpers\ApiResponse;
 
@@ -254,6 +258,39 @@ Route::prefix('v1')->group(function () {
             Route::prefix('voucher-types')->group(function () {
                 Route::get('/', [VoucherTypeController::class, 'index']);
                 Route::put('/{voucherType}', [VoucherTypeController::class, 'update']);
+            });
+
+            // Cost Category and Cost Center (add and update only)
+            Route::prefix('cost-categories')->group(function () {
+                Route::get('/', [CostCategoryController::class, 'index']);
+                Route::post('/', [CostCategoryController::class, 'store']);
+                Route::put('/{costCategory}', [CostCategoryController::class, 'update']);
+            });
+            Route::prefix('cost-centers')->group(function () {
+                Route::get('/options', [CostCenterController::class, 'options']);
+                Route::get('/', [CostCenterController::class, 'index']);
+                Route::post('/', [CostCenterController::class, 'store']);
+                Route::put('/{costCenter}', [CostCenterController::class, 'update']);
+            });
+
+            // Cheque Book (one row for every cheque leaf)
+            Route::prefix('cheque-books')->group(function () {
+                Route::get('/banks', [ChequeBookController::class, 'banks']);
+                Route::get('/books', [ChequeBookController::class, 'books']);
+                Route::get('/active', [ChequeBookController::class, 'activeCheques']);
+                Route::get('/delete-history', [ChequeBookController::class, 'history']);
+                Route::post('/delete-book', [ChequeBookController::class, 'destroyBook']);
+                Route::get('/', [ChequeBookController::class, 'index']);
+                Route::post('/', [ChequeBookController::class, 'store']);
+                Route::put('/{chequeBook}', [ChequeBookController::class, 'update']);
+                Route::post('/{chequeBook}/cancel', [ChequeBookController::class, 'cancel']);
+            });
+
+            // Cheque Entry register (rows are added by the vouchers)
+            Route::prefix('cheque-entries')->group(function () {
+                Route::get('/', [ChequeEntryController::class, 'index']);
+                Route::get('/{chequeEntry}', [ChequeEntryController::class, 'show']);
+                Route::post('/{chequeEntry}/clearance', [ChequeEntryController::class, 'clearance']);
             });
 
             // Voucher Entry

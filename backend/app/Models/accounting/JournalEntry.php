@@ -31,6 +31,11 @@ class JournalEntry extends Model
         return $this->belongsTo(ChartOfAc::class, 'ca_id');
     }
 
+    public function costCenter()
+    {
+        return $this->belongsTo(CostCenter::class, 'cost_center_id');
+    }
+
     public function createdBy()
     {
         return $this->belongsTo(User::class, 'created_by');

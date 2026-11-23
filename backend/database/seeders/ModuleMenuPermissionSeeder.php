@@ -1028,6 +1028,49 @@ class ModuleMenuPermissionSeeder extends Seeder
             );
         }
 
+        // Cost Category and Cost Center: add and update only, no delete (same as parts_bazar)
+        $costMenus = ['Cost Category' => 'cost-category', 'Cost Center' => 'cost-center'];
+        foreach ($costMenus as $menuName => $slug) {
+            $costMenu = Menu::updateOrCreate(
+                ['name' => $menuName, 'module_id' => $accountingModule->id],
+                ['slug' => $slug]
+            );
+            foreach (['view', 'create', 'edit'] as $action) {
+                Permission::updateOrCreate(
+                    ['name' => "{$slug}.{$action}", 'guard_name' => 'web'],
+                    [
+                        'module_id'   => $accountingModule->id,
+                        'menu_id'     => $costMenu->id,
+                        'sub_menu_id' => null,
+                    ]
+                );
+            }
+        }
+
+        // Cheque Book: add a book, update / cancel a leaf (edit), delete a whole book
+        $chequeBookMenus = [
+            'Cheque Book' => ['slug' => 'cheque-book', 'actions' => ['view', 'create', 'edit', 'delete']],
+            'Cheque Book Delete History' => ['slug' => 'cheque-book-delete-history', 'actions' => ['view']],
+            // the register of the cheques written by the vouchers; edit = set the clearance date
+            'Cheque Entry' => ['slug' => 'cheque-entry', 'actions' => ['view', 'edit']],
+        ];
+        foreach ($chequeBookMenus as $menuName => $setting) {
+            $chequeMenu = Menu::updateOrCreate(
+                ['name' => $menuName, 'module_id' => $accountingModule->id],
+                ['slug' => $setting['slug']]
+            );
+            foreach ($setting['actions'] as $action) {
+                Permission::updateOrCreate(
+                    ['name' => $setting['slug'] . '.' . $action, 'guard_name' => 'web'],
+                    [
+                        'module_id'   => $accountingModule->id,
+                        'menu_id'     => $chequeMenu->id,
+                        'sub_menu_id' => null,
+                    ]
+                );
+            }
+        }
+
         // the base heads of the Chart of Accounts and the BDT rate
         $this->call(ChartOfAcSeeder::class);
 

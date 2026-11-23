@@ -20,7 +20,7 @@ import DatePicker from "@/components/form/date-picker";
 import ReactSelect from "@/components/form/ReactSelect";
 import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { apiErrorMessage } from "@/lib/options";
-import { DEBIT, ENTRY_SOURCES, journalEntryService, JournalRow, VOUCHER_TABS } from "@/services/journalEntryService";
+import { costCenterName, DEBIT, ENTRY_SOURCES, journalEntryService, JournalRow, VOUCHER_TABS } from "@/services/journalEntryService";
 import { VoucherPreview } from "./VoucherPreview";
 
 const inputClass =
@@ -176,7 +176,13 @@ export default function VoucherManagePage() {
           if (!row.original.account) {
             return "";
           }
-          return <span className="text-gray-800 dark:text-white/90">{row.original.account.title} <span className="text-xs text-gray-400">({row.original.account.code})</span></span>;
+          const centerName = costCenterName(row.original.cost_center);
+          return (
+            <div>
+              <span className="text-gray-800 dark:text-white/90">{row.original.account.title} <span className="text-xs text-gray-400">({row.original.account.code})</span></span>
+              {centerName && <div className="text-xs text-gray-500 dark:text-gray-400">Cost Center: {centerName}</div>}
+            </div>
+          );
         },
       },
       {

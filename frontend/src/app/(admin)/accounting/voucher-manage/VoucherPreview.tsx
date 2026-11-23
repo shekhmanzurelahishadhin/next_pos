@@ -8,7 +8,7 @@ import { printHtml } from "@/lib/print";
 import { formatDate, formatMoney } from "@/lib/format";
 import { amountInWords } from "@/lib/inWords";
 import { apiErrorMessage } from "@/lib/options";
-import { DEBIT, journalEntryService, VoucherDetail } from "@/services/journalEntryService";
+import { costCenterName, DEBIT, journalEntryService, VoucherDetail } from "@/services/journalEntryService";
 
 // plain styles for the print window (the app's Tailwind classes are not loaded there)
 const PRINT_STYLE = `
@@ -123,7 +123,10 @@ export function VoucherPreview({ voucher, onClose }: Props) {
               {detail.lines.map((line, index) => (
                 <tr key={line.id}>
                   <td className={cell}>{index + 1}</td>
-                  <td className={cell}>{line.account ? line.account.title + " (" + line.account.code + ")" : ""}</td>
+                  <td className={cell}>
+                    {line.account ? line.account.title + " (" + line.account.code + ")" : ""}
+                    {line.cost_center && <div style={{ fontSize: "11px", color: "#666" }}>Cost Center: {costCenterName(line.cost_center)}</div>}
+                  </td>
                   <td className={numberCell}>{line.transaction_type === DEBIT ? formatMoney(line.amount) : ""}</td>
                   <td className={numberCell}>{line.transaction_type === DEBIT ? "" : formatMoney(line.amount)}</td>
                 </tr>
