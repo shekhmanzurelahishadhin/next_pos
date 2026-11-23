@@ -5,7 +5,7 @@
 // below, where its amount can still be changed. The summary on the right shows the
 // voucher no and the totals; the voucher can be saved when Total Dr and Total Cr are the same.
 // Bank Payment and Contra can take a cheque from the Cheque Book: it becomes USED on save.
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
 import { FiArrowLeft, FiCheckCircle, FiPlus, FiTrash2 } from "react-icons/fi";
@@ -21,6 +21,7 @@ import { formatMoney } from "@/lib/format";
 import { apiErrorMessage, blurOnWheel, loadOptions, Option } from "@/lib/options";
 import { accountingSetupService } from "@/services/accountingSetupService";
 import { ActiveCheque, chequeBookService } from "@/services/chequeBookService";
+import { AccountAutocomplete, AccountAutocompleteHandle } from "./AccountAutocomplete";
 import {
   BILL_TYPES,
   CHEQUE_TYPES,
@@ -138,7 +139,6 @@ function VoucherEntryForm() {
 
   const [companies, setCompanies] = useState<Option[]>([]);
   const [currencies, setCurrencies] = useState<Option[]>([]);
-  const [heads, setHeads] = useState<{ value: number; label: string }[]>([]);
   const [costCenters, setCostCenters] = useState<{ value: number; label: string }[]>([]);
   const [cheques, setCheques] = useState<ActiveCheque[]>([]);
 
@@ -159,6 +159,11 @@ function VoucherEntryForm() {
 
   // the line being added; like parts_bazar the cost center stays for the next line
   const [entryCa, setEntryCa] = useState<number | null>(null);
+  const [entryCaLabel, setEntryCaLabel] = useState("");
+  // like parts_bazar: the bank put by a picked cheque can not be changed until the line is added
+  const [entryLocked, setEntryLocked] = useState(false);
+  const accountRef = useRef<AccountAutocompleteHandle>(null);
+  const amountRef = useRef<HTMLInputElement>(null);
   const [entryCenter, setEntryCenter] = useState<number | null>(null);
   const [entrySide, setEntrySide] = useState(String(DEBIT));
   const [entryAmount, setEntryAmount] = useState("");
@@ -243,7 +248,7 @@ function VoucherEntryForm() {
       .catch((err) => setEditBlocked(apiErrorMessage(err, "No result found !")));
   }, [isEdit, editType, editNo]);
 
-  // companies, currencies, account titles and cost centers (the same for every voucher type)
+  // companies, currencies and cost centers (account titles are searched as you type)
   useEffect(() => {
     loadOptions("/configure/companies")
       .then((list) => {
@@ -263,10 +268,6 @@ function VoucherEntryForm() {
       .currencies()
       .then((list) => setCurrencies(list))
       .catch(() => toast.error("Failed to load the currencies"));
-    journalEntryService
-      .heads(VOUCHER_TABS[0].id)
-      .then((data) => setHeads(data.heads))
-      .catch(() => toast.error("Failed to load the account titles"));
     accountingSetupService
       .costCenterOptions()
       .then((list) => setCostCenters(list))
@@ -351,15 +352,6 @@ function VoucherEntryForm() {
 
   const totals = totalsOf(lines);
 
-  function headTitle(id: number) {
-    for (const head of heads) {
-      if (head.value === id) {
-        return head.label;
-      }
-    }
-    return "";
-  }
-
   function centerTitle(id: number | null) {
     if (!id) {
       return "";
@@ -409,6 +401,11 @@ function VoucherEntryForm() {
     if (!value) {
       setChequeId(null);
       setChequeNo("");
+      if (entryLocked) {
+        setEntryCa(null);
+        setEntryCaLabel("");
+        setEntryLocked(false);
+      }
       return;
     }
     const id = Number(value);
@@ -429,6 +426,8 @@ function VoucherEntryForm() {
       }
       if (!bankAdded) {
         setEntryCa(cheque.bank_id);
+        setEntryCaLabel(cheque.bank_name);
+        setEntryLocked(true);
         setEntrySide(String(CREDIT));
         if (totals.difference > 0) {
           setEntryAmount(String(totals.difference));
@@ -457,7 +456,7 @@ function VoucherEntryForm() {
 
     const newLine: VoucherLine = {
       ca_id: entryCa,
-      title: headTitle(entryCa),
+      title: entryCaLabel,
       transaction_type: Number(entrySide),
       amount: entryAmount,
       cost_center_id: entryCenter,
@@ -466,7 +465,13 @@ function VoucherEntryForm() {
     const newLines = [...lines, newLine];
     setLines(newLines);
     setEntryCa(null);
+    setEntryCaLabel("");
+    setEntryLocked(false);
     fillBalance(newLines);
+    // like parts_bazar the cursor goes back to the account title
+    if (accountRef.current) {
+      accountRef.current.focus();
+    }
   }
 
   // typing in a line's Dr or Cr cell moves the line to that side
@@ -512,6 +517,8 @@ function VoucherEntryForm() {
     setPaymentType("");
     setPayTo("");
     setEntryCa(null);
+    setEntryCaLabel("");
+    setEntryLocked(false);
     setEntryCenter(null);
     setEntrySide(String(DEBIT));
     setEntryAmount("");
@@ -776,7 +783,20 @@ function VoucherEntryForm() {
                 <div className="grid grid-cols-1 items-end gap-3 md:grid-cols-12">
                   <div className="md:col-span-4">
                     <Label required>Account Title</Label>
-                    <ReactSelect options={heads} value={entryCa} placeholder="Search account title" onChange={(value) => setEntryCa(value ? Number(value) : null)} />
+                    <AccountAutocomplete
+                      ref={accountRef}
+                      value={entryCa}
+                      label={entryCaLabel}
+                      disabled={entryLocked}
+                      onPick={(id, label) => {
+                        setEntryCa(id);
+                        setEntryCaLabel(label);
+                        // the amount is the next thing to type
+                        if (id && amountRef.current) {
+                          amountRef.current.focus();
+                        }
+                      }}
+                    />
                   </div>
                   <div className="md:col-span-3">
                     <Label>Cost Center</Label>
@@ -788,7 +808,7 @@ function VoucherEntryForm() {
                   </div>
                   <div className="md:col-span-2">
                     <Label required>Amount</Label>
-                    <input type="number" value={entryAmount} min={0} step="0.01" placeholder="0.00" onWheel={blurOnWheel} onChange={(e) => setEntryAmount(e.target.value)} onKeyDown={entryKeyDown} className={amountClass} />
+                    <input ref={amountRef} type="number" value={entryAmount} min={0} step="0.01" placeholder="0.00" onWheel={blurOnWheel} onChange={(e) => setEntryAmount(e.target.value)} onKeyDown={entryKeyDown} className={amountClass} />
                   </div>
                   <div className="md:col-span-1">
                     <Button type="button" size="sm" className="h-10 w-full" onClick={addLine} startIcon={<FiPlus />}>

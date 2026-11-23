@@ -15,6 +15,8 @@ class JournalEntryController extends Controller
     public function __construct(private JournalEntryService $service)
     {
         $this->middleware('permission:voucher-entry.create')->only('heads', 'nextNo', 'store');
+        // the update form adds lines too
+        $this->middleware('permission:voucher-entry.create|voucher-entry.edit')->only('searchHeads');
         $this->middleware('permission:voucher-entry.view|voucher-entry.edit|voucher-entry.delete')->only('index', 'show');
         $this->middleware('permission:voucher-entry.edit')->only('update', 'toggleLock');
         $this->middleware('permission:voucher-entry.delete')->only('destroy');
@@ -87,6 +89,12 @@ class JournalEntryController extends Controller
             'heads' => $this->service->headOptions(),
             'voucher_type' => $voucherType,
         ], 'Account titles');
+    }
+
+    // account title autocomplete, at least 2 letters like parts_bazar
+    public function searchHeads(Request $request)
+    {
+        return ApiResponse::success($this->service->searchHeads((string) $request->input('search_ca', '')), 'Account titles');
     }
 
     // the voucher no the next save will get

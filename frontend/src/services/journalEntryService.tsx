@@ -118,6 +118,12 @@ export const ENTRY_SOURCES: Record<number, string> = { 1: "Manual" };
 const URL = "/accounting/journal-entries";
 
 class JournalEntryService {
+  // account title autocomplete (parts_bazar newCaWithNoChild2), at least 2 letters
+  async searchHeads(text: string): Promise<{ value: number; label: string; code: string }[]> {
+    const res = await api.get(`${URL}/heads/search`, { params: { search_ca: text } });
+    return res.data.data;
+  }
+
   async heads(voucherType: number) {
     const res = await api.get(`${URL}/heads`, { params: { voucher_type: voucherType } });
     return res.data.data as {

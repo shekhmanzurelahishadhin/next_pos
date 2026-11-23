@@ -25,6 +25,32 @@ class JournalEntryService
     }
 
     // Account Title list: heads with no child head and not a main head (parts_bazar newCaWithNoChild2)
+    // account title search of the voucher (parts_bazar chartOfAc/newCaWithNoChild2):
+    // title has the text OR code starts with it, only heads with no child and not a main head, title ASC
+    public function searchHeads($text)
+    {
+        $text = trim($text);
+        if (strlen($text) < 2) {
+            return [];
+        }
+        $parentIds = DB::table('chart_of_acs')->where('root', '!=', ChartOfAc::MAIN_ROOT)->pluck('root')->all();
+
+        $rows = ChartOfAc::where(function ($match) use ($text) {
+                $match->where('title', 'like', '%' . $text . '%')->orWhere('code', 'like', $text . '%');
+            })
+            ->where('root', '!=', ChartOfAc::MAIN_ROOT)
+            ->whereNotIn('id', $parentIds)
+            ->orderBy('title')
+            ->limit(50)
+            ->get(['id', 'code', 'title']);
+
+        $list = [];
+        foreach ($rows as $row) {
+            $list[] = ['value' => $row->id, 'label' => $row->title, 'code' => $row->code];
+        }
+        return $list;
+    }
+
     public function headOptions()
     {
         $parentIds = DB::table('chart_of_acs')->where('root', '!=', ChartOfAc::MAIN_ROOT)->pluck('root')->all();

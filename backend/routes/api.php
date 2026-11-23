@@ -296,6 +296,7 @@ Route::prefix('v1')->group(function () {
             // Voucher Entry
             Route::prefix('journal-entries')->group(function () {
                 Route::get('/heads', [JournalEntryController::class, 'heads']);
+                Route::get('/heads/search', [JournalEntryController::class, 'searchHeads']);
                 Route::get('/next-no', [JournalEntryController::class, 'nextNo']);
                 Route::post('/', [JournalEntryController::class, 'store']);
                 Route::get('/', [JournalEntryController::class, 'index']);
