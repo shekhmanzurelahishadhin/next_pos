@@ -24,6 +24,9 @@ class ChartOfAcSeeder extends Seeder
             [ChartOfAc::CASH_IN_HAND, '72', 'CASH IN HAND', ChartOfAc::CASH_IN_HAND_ALL],
             [ChartOfAc::ADVANCE_DEPOSIT_PRE_PAYMENT, '148', 'ADVANCE DEPOSIT & PRE-PAYMENT', ChartOfAc::CURRENT_ASSET],
             [ChartOfAc::INVENTORY_STOCK, '737', 'Inventory Stock', ChartOfAc::CURRENT_ASSET],
+            // VAT and tax the customer cut at source on a money receipt (next_pos heads)
+            [ChartOfAc::VDS_RECEIVABLE, '9001', 'VDS Receivable', ChartOfAc::ADVANCE_DEPOSIT_PRE_PAYMENT],
+            [ChartOfAc::TDS_RECEIVABLE, '9002', 'TDS Receivable', ChartOfAc::ADVANCE_DEPOSIT_PRE_PAYMENT],
 
             [ChartOfAc::LIABILITY, '2', 'LIABILITY', 0],
             [ChartOfAc::CURRENT_LA, '207', 'CURRENT LIABILITY', ChartOfAc::LIABILITY],
@@ -39,6 +42,8 @@ class ChartOfAcSeeder extends Seeder
             [ChartOfAc::DISCOUNT_ON_SALES, '735', 'Discount On Sales', ChartOfAc::SALES_REVENUE],
             [ChartOfAc::VAT_ON_SALES, '736', 'VAT On Sales', ChartOfAc::SALES_REVENUE],
             [ChartOfAc::NON_OPERATING_INCOME, '261', 'NON OPERATING INCOME', ChartOfAc::INCOME],
+            // discount the supplier allows on a supplier payment (next_pos head)
+            [ChartOfAc::DISCOUNT_RECEIVED, '9003', 'Discount Received', ChartOfAc::NON_OPERATING_INCOME],
 
             [ChartOfAc::EXPENSE, '5', 'EXPENSE', 0],
             [ChartOfAc::DIRECT_EXPENSES_HEAD, '322', 'Direct EXPENSE', ChartOfAc::EXPENSE],

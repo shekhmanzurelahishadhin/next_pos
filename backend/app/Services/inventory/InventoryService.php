@@ -27,6 +27,7 @@ class InventoryService
                 'inventories.stock_in',
                 'inventories.stock_out',
                 'inventories.purchase_price',
+                'inventories.remarks',
                 'inventories.created_at',
                 'products.name as product_name',
                 'products.part_number',

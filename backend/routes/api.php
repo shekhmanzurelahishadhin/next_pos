@@ -21,6 +21,7 @@ use App\Http\Controllers\api\purchase\SupplierController;
 use App\Http\Controllers\api\purchase\PurchaseController;
 use App\Http\Controllers\api\purchase\PurchaseReturnController;
 use App\Http\Controllers\api\inventory\InventoryController;
+use App\Http\Controllers\api\inventory\ManualStockController;
 use App\Http\Controllers\api\inventory\ShortListOrderController;
 use App\Http\Controllers\api\inventory\StockTransferController;
 use App\Http\Controllers\api\inventory\InventoryAuditController;
@@ -320,6 +321,14 @@ Route::prefix('v1')->group(function () {
             Route::get('stock', [InventoryController::class, 'stock']);
             Route::get('barcodes', [InventoryController::class, 'barcodes']);
 
+            // Manual stock in / out on the Inventory Stock page
+            Route::prefix('manual-stock')->group(function () {
+                Route::get('/search-products', [ManualStockController::class, 'searchProducts']);
+                Route::get('/search-barcodes', [ManualStockController::class, 'searchBarcodes']);
+                Route::post('/', [ManualStockController::class, 'store']);
+                Route::delete('/{inventory}', [ManualStockController::class, 'destroy']);
+            });
+
             // Short List Order (products we plan to buy)
             Route::prefix('short-list-orders')->group(function () {
                 Route::get('/', [ShortListOrderController::class, 'index']);
@@ -372,6 +381,7 @@ Route::prefix('v1')->group(function () {
             });
             Route::get('configure/products', [InventoryReportController::class, 'productReport']);
             Route::get('search-customers', [SalesReportController::class, 'searchCustomers']);
+            Route::get('banks', [SalesReportController::class, 'banks']);
             Route::get('search-suppliers', [PurchaseReportController::class, 'searchSuppliers']);
             Route::prefix('purchase')->group(function () {
                 Route::get('purchase', [PurchaseReportController::class, 'purchase']);

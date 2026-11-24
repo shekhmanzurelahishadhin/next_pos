@@ -7,6 +7,8 @@ use App\Models\inventory\InventoryBarcode;
 use App\Models\purchase\Purchase;
 use App\Models\purchase\PurchaseReturn;
 use App\Models\purchase\PurchaseReturnDetail;
+use App\Models\accounting\JournalEntry;
+use App\Services\accounting\AutoJournalService;
 use App\Services\softConfig\ScrollCodeService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +20,7 @@ class PurchaseReturnService
 {
     const ENTRY_POINT = 'purchase_return';
 
-    public function __construct(private ScrollCodeService $scrollCodes)
+    public function __construct(private ScrollCodeService $scrollCodes, private AutoJournalService $autoJournal)
     {
     }
 
@@ -189,6 +191,9 @@ class PurchaseReturnService
                 'refund_amount' => $refundAmount,
             ]);
 
+            // purchase return journal
+            $this->autoJournal->postPurchaseReturn($return);
+
             DB::commit();
             return $return;
         } catch (\Exception $e) {
@@ -333,6 +338,7 @@ class PurchaseReturnService
             }
 
             Inventory::where('entry_point', self::ENTRY_POINT)->where('entry_no', $return->return_no)->delete();
+            $this->autoJournal->remove([JournalEntry::PURCHASE_RETURN, JournalEntry::PURCHASE_RETURN_REFUND], $return->return_no);
             $return->details()->update(['deleted_at' => now()]);
             $return->update(['deleted_by' => Auth::id()]);
             $return->delete();

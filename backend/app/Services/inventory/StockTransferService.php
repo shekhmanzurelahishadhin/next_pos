@@ -47,6 +47,7 @@ class StockTransferService
                 'location_id'   => $row->location_id,
                 'location_name' => $row->location ? $row->location->name : null,
                 'stock'         => $stock,
+                'purchase_price' => (float) $row->purchase_price,
             ];
         }
 

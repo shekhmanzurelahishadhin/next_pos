@@ -4,6 +4,7 @@ namespace App\Http\Controllers\api\report;
 
 use App\Helpers\ApiResponse;
 use App\Http\Controllers\Controller;
+use App\Models\accounting\ChartOfAc;
 use App\Services\report\SalesReportService;
 use Illuminate\Http\Request;
 
@@ -153,5 +154,11 @@ class SalesReportController extends Controller
     public function searchCustomers(Request $request)
     {
         return ApiResponse::success($this->service->searchCustomers((string) $request->get('term', '')), 'Customers retrieve successfully');
+    }
+
+    // bank heads of the Chart of Accounts, for the Bank Name filter of the collection and payment reports
+    public function banks()
+    {
+        return ApiResponse::success(ChartOfAc::bankOptions(), 'Banks retrieve successfully');
     }
 }

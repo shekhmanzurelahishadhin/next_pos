@@ -153,11 +153,10 @@ export function SupplierPaymentFormModal({ supplierId, onClose, onSaved }: Suppl
 
   const advanceBalance = form ? form.advance_balance : 0;
 
-  const bankOptions: Option[] = [];
+  // bank heads of the Chart of Accounts (Cash At Bank), like parts_bazar
+  let bankOptions: Option[] = [];
   if (form) {
-    for (const name of form.banks) {
-      bankOptions.push({ value: name, label: name });
-    }
+    bankOptions = form.banks;
   }
 
   // parts_bazar: picking the payment type clears the rows and puts the whole due as lot amount
@@ -373,7 +372,7 @@ export function SupplierPaymentFormModal({ supplierId, onClose, onSaved }: Suppl
               <Field label="Bank Name" required={BANK_TYPES.includes(paymentType)}>
                 <ReactSelect
                   options={bankOptions}
-                  placeholder={bankOptions.length > 0 ? "Select" : "No bank yet (Configure > Lookups, type bank_name)"}
+                  placeholder={bankOptions.length > 0 ? "Select" : "No bank yet (Accounting > Chart Of Accounts, under Cash At Bank)"}
                   value={bankName || null}
                   isDisabled={noBank}
                   onChange={(value) => setBankName(value ? String(value) : "")}
@@ -530,8 +529,8 @@ export function SupplierPaymentVoucherModal({ slNo, onClose }: { slNo: string | 
 
   // "Bank / Cheque 123 (01-11-2026)"
   let bankText = "";
-  if (payment && payment.bank_name) {
-    bankText = payment.bank_name;
+  if (payment && payment.bank_title) {
+    bankText = payment.bank_title;
     if (payment.cheque_no) {
       bankText += ` / Cheque ${payment.cheque_no}`;
     }

@@ -55,6 +55,11 @@ class ChartOfAc extends Model
     const INVENTORY_STOCK = 5126;
     const COST_OF_GOODS_SOLD = 5127;
     const INVENTORY_ADJUSTMENT = 5128;
+    // next_pos heads for the money receipt VDS / TDS and the supplier payment discount
+    // (parts_bazar has no working head for these)
+    const VDS_RECEIVABLE = 9001;
+    const TDS_RECEIVABLE = 9002;
+    const DISCOUNT_RECEIVED = 9003;
 
     // dates go out as local time "2026-11-15 16:01:06", not as UTC
     protected function serializeDate(DateTimeInterface $date)
@@ -70,5 +75,34 @@ class ChartOfAc extends Model
     public function updatedBy()
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    // the bank heads (children of Cash At Bank), like parts_bazar showchildaclistbyroot(157)
+    public static function bankOptions(): array
+    {
+        $rows = self::where('root', self::BANK)->orderBy('title')->get(['id', 'title']);
+        $list = [];
+        foreach ($rows as $row) {
+            $list[] = ['value' => (string) $row->id, 'label' => $row->title];
+        }
+        return $list;
+    }
+
+    public static function isBank($id): bool
+    {
+        return self::where('id', $id)->where('root', self::BANK)->exists();
+    }
+
+    // title of a bank head; an old text bank name comes back as it is
+    public static function bankTitle($id): ?string
+    {
+        if ($id === null || $id === '') {
+            return null;
+        }
+        $title = self::where('id', $id)->value('title');
+        if ($title) {
+            return $title;
+        }
+        return (string) $id;
     }
 }

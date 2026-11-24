@@ -43,5 +43,5 @@ export const useInventoryList = <T,>(loader: Loader<T>) => {
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   }, []);
 
-  return { rows, total, loading, stores, pagination, setPagination, handleFilterChange };
+  return { rows, total, loading, stores, pagination, setPagination, handleFilterChange, reload: load };
 };

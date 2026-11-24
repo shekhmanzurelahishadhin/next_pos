@@ -2,6 +2,7 @@
 
 namespace App\Services\report;
 
+use App\Models\accounting\ChartOfAc;
 use App\Models\purchase\Purchase;
 use App\Models\purchase\SupplierPayment;
 use Illuminate\Support\Facades\DB;
@@ -328,12 +329,14 @@ class PurchaseReportService
         $query = DB::table('supplier_payments')
             ->leftJoin('suppliers', 'suppliers.id', '=', 'supplier_payments.supplier_id')
             ->leftJoinSub($barcodesByPr, 'pr_barcodes', 'pr_barcodes.sl_no', '=', 'supplier_payments.sl_no')
+            ->leftJoin('chart_of_acs as bank_head', 'bank_head.id', '=', 'supplier_payments.bank_name')
             ->whereNull('supplier_payments.deleted_at')
             ->whereBetween('supplier_payments.payment_date', [$filters['start_date'], $filters['end_date']])
             ->select('supplier_payments.sl_no')
             ->selectRaw('MIN(supplier_payments.payment_date) AS payment_date')
             ->selectRaw('MIN(supplier_payments.payment_type) AS payment_type')
-            ->selectRaw('MIN(supplier_payments.bank_name) AS bank_name')
+            // the bank is a Chart of Accounts head, an old text name is shown as it is
+            ->selectRaw('MIN(COALESCE(bank_head.title, supplier_payments.bank_name)) AS bank_name')
             ->selectRaw('MIN(suppliers.name) AS supplier_name')
             ->selectRaw('MIN(pr_barcodes.barcode) AS barcode')
             ->selectRaw('SUM(supplier_payments.amount) AS payment_amount')
@@ -406,7 +409,7 @@ class PurchaseReportService
             $labels['Payment Type'] = SupplierPayment::TYPE_NAMES[$type] ?? $type;
         }
         if (!empty($filters['bank_name'])) {
-            $labels['Bank Name'] = $filters['bank_name'];
+            $labels['Bank Name'] = ChartOfAc::bankTitle($filters['bank_name']);
         }
         if (!empty($filters['supplier_id'])) {
             $labels['Supplier'] = $this->name('suppliers', $filters['supplier_id']);

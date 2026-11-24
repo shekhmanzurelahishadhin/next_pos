@@ -7,6 +7,8 @@ use App\Models\inventory\InventoryBarcode;
 use App\Models\sales\Sale;
 use App\Models\sales\SaleReturn;
 use App\Models\sales\SaleReturnDetail;
+use App\Models\accounting\JournalEntry;
+use App\Services\accounting\AutoJournalService;
 use App\Services\softConfig\ScrollCodeService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +20,7 @@ class SaleReturnService
 {
     const ENTRY_POINT = 'sale_return';
 
-    public function __construct(private ScrollCodeService $scrollCodes)
+    public function __construct(private ScrollCodeService $scrollCodes, private AutoJournalService $autoJournal)
     {
     }
 
@@ -210,6 +212,9 @@ class SaleReturnService
                 'refund_amount' => $refundAmount,
             ]);
 
+            // sales return journal and the stock back journal
+            $this->autoJournal->postSaleReturn($return);
+
             DB::commit();
             return $return;
         } catch (\Exception $e) {
@@ -363,6 +368,7 @@ class SaleReturnService
                 InventoryBarcode::addStockIn($detail->barcode, -$detail->return_qty);
             }
             Inventory::where('entry_point', self::ENTRY_POINT)->where('entry_no', $return->return_no)->delete();
+            $this->autoJournal->remove([JournalEntry::SALES_RETURN, JournalEntry::SALES_RETURN_REFUND], $return->return_no);
 
             $return->details()->update(['deleted_at' => now()]);
             $return->update(['deleted_by' => Auth::id()]);

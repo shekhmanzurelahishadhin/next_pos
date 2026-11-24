@@ -28,7 +28,7 @@ export interface SpForm {
   address?: string | null;
   total_due: number;
   advance_balance: number; // what an Adjustment payment can still use
-  banks: string[];
+  banks: { value: string; label: string }[]; // bank heads of the Chart of Accounts
   lines: SpFormLine[];
 }
 

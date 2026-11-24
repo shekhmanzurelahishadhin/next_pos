@@ -14,15 +14,16 @@ use App\Models\softConfig\Lookup;
 use App\Models\softConfig\Product;
 use App\Models\softConfig\PurchasePrice;
 use App\Models\softConfig\Store;
+use App\Services\accounting\AutoJournalService;
 use App\Services\softConfig\ScrollCodeService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 // Direct purchase, same flow as parts_bazar:
-// create (Pending) -> approve (stock in, purchase price, sell price, supplier payment) -> locked
+// create (Pending) -> approve (stock in, purchase price, sell price, supplier payment, auto journal) -> locked
 class PurchaseService
 {
-    public function __construct(private ScrollCodeService $scrollCodes)
+    public function __construct(private ScrollCodeService $scrollCodes, private AutoJournalService $autoJournal)
     {
     }
 
@@ -368,8 +369,9 @@ class PurchaseService
 
             // a cash purchase pays the supplier at once
             if ($purchase->cash_due == Purchase::CASH && $purchase->payment_amount > 0) {
+                $slNo = $this->scrollCodes->nextNumber('supplier_payment', $date);
                 SupplierPayment::create([
-                    'sl_no'        => $this->scrollCodes->nextNumber('supplier_payment', $date),
+                    'sl_no'        => $slNo,
                     'company_id'   => $purchase->company_id,
                     'supplier_id'  => $purchase->supplier_id,
                     'purchase_id'  => $purchase->id,
@@ -380,7 +382,12 @@ class PurchaseService
                     'amount'       => $purchase->payment_amount,
                     'bill_amount'  => $purchase->grand_total,
                 ]);
+                // like parts_bazar: the cash payment voucher of this payment comes first
+                $this->autoJournal->postSupplierPayment($slNo);
             }
+
+            // Purchase journal
+            $this->autoJournal->postPurchase($purchase);
 
             $purchase->update([
                 'status'      => Purchase::APPROVED,

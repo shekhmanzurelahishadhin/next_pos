@@ -6,7 +6,9 @@ use App\Models\purchase\Purchase;
 use App\Models\purchase\PurchaseReturn;
 use App\Models\purchase\Supplier;
 use App\Models\purchase\SupplierPayment;
-use App\Models\softConfig\Lookup;
+use App\Models\accounting\ChartOfAc;
+use App\Models\accounting\JournalEntry;
+use App\Services\accounting\AutoJournalService;
 use App\Services\softConfig\ScrollCodeService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +20,7 @@ class SupplierPaymentService
 {
     const BANK_TYPES = ['2', '3']; // cheque, deposit into bank need a bank name
 
-    public function __construct(private ScrollCodeService $scrollCodes, private PurchaseService $purchases)
+    public function __construct(private ScrollCodeService $scrollCodes, private PurchaseService $purchases, private AutoJournalService $autoJournal)
     {
     }
 
@@ -100,7 +102,7 @@ class SupplierPaymentService
             'address'         => $supplier->address,
             'total_due'       => $this->purchases->supplierDue($supplier->id),
             'advance_balance' => $this->advanceBalance($supplier->id),
-            'banks'           => Lookup::bankNames(),
+            'banks'           => ChartOfAc::bankOptions(),
             'lines'           => $lines,
         ];
     }
@@ -122,6 +124,10 @@ class SupplierPaymentService
 
         if (in_array($data['payment_type'], self::BANK_TYPES) && empty($data['bank_name'])) {
             throw new \RuntimeException('Select Bank Name');
+        }
+        // the bank is a head of the Chart of Accounts (Cash At Bank), the journal posts to it
+        if (!empty($data['bank_name']) && !ChartOfAc::isBank($data['bank_name'])) {
+            throw new \RuntimeException('Bank Name is invalid.');
         }
 
         // same supplier, date and lot saved in the last 30 seconds = double click
@@ -231,6 +237,9 @@ class SupplierPaymentService
                 SupplierPayment::create($row);
             }
 
+            // Cash Payment / Bank Payment voucher of this payment
+            $this->autoJournal->postSupplierPayment($slNo);
+
             DB::commit();
             return $slNo;
         } catch (\Exception $e) {
@@ -323,6 +332,7 @@ class SupplierPaymentService
             'lot_amount'     => (float) $first->lot_amount,
             'supplier_mr_no' => $first->supplier_mr_no,
             'bank_name'      => $first->bank_name,
+            'bank_title'     => ChartOfAc::bankTitle($first->bank_name),
             'cheque_no'      => $first->cheque_no,
             'cheque_date'    => $first->cheque_date ? $first->cheque_date->toDateString() : null,
             'remarks'        => $first->remarks,
@@ -357,6 +367,8 @@ class SupplierPaymentService
             foreach ($lines as $line) {
                 $line->delete();
             }
+            // like parts_bazar: the journal of this payment goes too
+            $this->autoJournal->remove([JournalEntry::SUPPLIER_PAYMENT], $slNo);
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();

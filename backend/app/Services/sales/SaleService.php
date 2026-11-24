@@ -10,17 +10,18 @@ use App\Models\sales\Sale;
 use App\Models\sales\SaleDetail;
 use App\Models\sales\SaleReturn;
 use App\Models\softConfig\Lookup;
+use App\Services\accounting\AutoJournalService;
 use App\Services\softConfig\ScrollCodeService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 // Sales, same flow as parts_bazar sellItems:
-// create SO (Pending) -> approve (stock out by barcode, money receipt for cash) -> locked
+// create SO (Pending) -> approve (stock out by barcode, money receipt for cash, auto journal) -> locked
 class SaleService
 {
     const ENTRY_POINT = 'sale';
 
-    public function __construct(private ScrollCodeService $scrollCodes)
+    public function __construct(private ScrollCodeService $scrollCodes, private AutoJournalService $autoJournal)
     {
     }
 
@@ -401,8 +402,9 @@ class SaleService
 
             // money received with a cash sale
             if ($sale->cash_due == Sale::CASH && $sale->received_amount > 0) {
+                $mrNo = $this->scrollCodes->nextNumber('money_receipt', $sale->order_date);
                 MoneyReceipt::create([
-                    'mr_no'         => $this->scrollCodes->nextNumber('money_receipt', $sale->order_date),
+                    'mr_no'         => $mrNo,
                     'company_id'    => $sale->company_id,
                     'customer_id'   => $sale->customer_id,
                     'sale_id'       => $sale->id,
@@ -414,7 +416,12 @@ class SaleService
                     'bill_amount'   => $sale->grand_total,
                     'created_by'    => Auth::id(),
                 ]);
+                // like parts_bazar: the cash receive voucher of this MR comes first
+                $this->autoJournal->postMoneyReceipt($mrNo);
             }
+
+            // Sales journal and COGS journal
+            $this->autoJournal->postSale($sale);
 
             $sale->update([
                 'previous_due' => $previousDue,

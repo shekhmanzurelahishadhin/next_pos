@@ -1,7 +1,14 @@
 "use client";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ColumnDef } from "@tanstack/react-table";
+import { toast } from "react-toastify";
+import { FiTrash } from "react-icons/fi";
+import { useAuth } from "@/context/AuthContext";
+import { useAlert } from "@/hooks/useAlert";
 import AccessRoute from "@/routes/AccessRoute";
+import ActionButtons from "@/components/ui/button/ActionButton";
+import { apiErrorMessage } from "@/lib/options";
+import ManualStockModal from "../components/ManualStockModal";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
 import ComponentCard from "@/components/common/ComponentCard";
 import { DataTable } from "@/components/tables/DataTable";
@@ -15,6 +22,25 @@ const qty = (value: string) => <span className="block text-right">{Number(value)
 // parts_bazar "Manage Inventory Stock Record": every stock in and stock out
 export default function InventoryStockPage() {
   const list = useInventoryList(getStock);
+  const { hasPermission } = useAuth();
+  const { confirm } = useAlert();
+  const [manualOpen, setManualOpen] = useState(false);
+  const reload = list.reload;
+
+  // only a manual stock in / out can be deleted here, its stock and journal go with it
+  const removeManual = useCallback(async (row: StockRow) => {
+    const result = await confirm({ title: "Delete Manual Stock?", text: "Are you sure, you delete this manual stock " + row.entry_no + "? Its stock and journal will be deleted." });
+    if (!result.isConfirmed) {
+      return;
+    }
+    try {
+      await inventoryService.deleteManualStock(row.id);
+      toast.success("Deleted successfully");
+      reload();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Failed to delete"));
+    }
+  }, [confirm, reload]);
 
   useEffect(() => {
     document.title = "Inventory Stock | Multibrand POS";
@@ -40,7 +66,12 @@ export default function InventoryStockPage() {
       accessorKey: "entry_no",
       header: "Transaction No",
       meta: { filterVariant: "text", widthClass: "w-[110px]" },
-      cell: ({ row }) => <span className="font-medium text-gray-800 dark:text-white/90">{row.original.entry_no}</span>,
+      cell: ({ row }) => (
+        <div>
+          <span className="font-medium text-gray-800 dark:text-white/90">{row.original.entry_no}</span>
+          {row.original.remarks && <div className="text-xs text-gray-400">{row.original.remarks}</div>}
+        </div>
+      ),
     },
     {
       id: "store_id",
@@ -107,13 +138,39 @@ export default function InventoryStockPage() {
       meta: { filterVariant: "none", widthClass: "w-[110px]" },
       cell: ({ row }) => row.original.created_by_name,
     },
-  ], [list.stores]);
+    {
+      id: "actions",
+      header: "Options",
+      meta: { filterVariant: "none", widthClass: "w-[70px]" },
+      cell: ({ row }) => (
+        <ActionButtons
+          row={row.original}
+          buttons={[
+            {
+              icon: FiTrash,
+              variant: "danger",
+              size: "sm",
+              tooltip: "Delete",
+              show: () => row.original.entry_point === "manual" && hasPermission("inventory-stock.delete"),
+              onClick: () => removeManual(row.original),
+            },
+          ]}
+        />
+      ),
+    },
+  ], [list.stores, hasPermission, removeManual]);
 
   return (
-    <AccessRoute requiredPermissions={["inventory-stock.view"]}>
+    <AccessRoute requiredPermissions={["inventory-stock.view", "inventory-stock.create", "inventory-stock.delete"]}>
       <div>
         <PageBreadcrumb items={[{ title: "Inventory" }, { title: "Inventory Stock" }]} />
-        <ComponentCard title="Inventory Stock" desc="Every stock in and stock out: purchase approve, purchase return ...">
+        <ComponentCard
+          title="Inventory Stock"
+          desc="Every stock in and stock out: purchase approve, purchase return ... A manual stock in / out also writes an Inventory Adjustment journal."
+          showAddButton={hasPermission("inventory-stock.create")}
+          buttonLabel="Manual Stock In / Out"
+          openModal={() => setManualOpen(true)}
+        >
           <DataTable
             columns={columns}
             data={list.rows}
@@ -125,6 +182,7 @@ export default function InventoryStockPage() {
             exportFilename="inventory-stock"
           />
         </ComponentCard>
+        <ManualStockModal isOpen={manualOpen} onClose={() => setManualOpen(false)} onSaved={reload} />
       </div>
     </AccessRoute>
   );

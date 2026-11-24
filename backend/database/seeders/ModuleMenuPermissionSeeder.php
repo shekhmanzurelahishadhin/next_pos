@@ -741,14 +741,21 @@ class ModuleMenuPermissionSeeder extends Seeder
                 ['name' => $menuName, 'module_id' => $inventoryModule->id],
                 ['slug' => $slug]
             );
-            Permission::updateOrCreate(
-                ['name' => "{$slug}.view", 'guard_name' => 'web'],
-                [
-                    'module_id'   => $inventoryModule->id,
-                    'menu_id'     => $inventoryMenu->id,
-                    'sub_menu_id' => null,
-                ]
-            );
+            // Inventory Stock also has the manual stock in / out (parts_bazar inventory/create) and its delete
+            $actions = ['view'];
+            if ($slug == 'inventory-stock') {
+                $actions = ['view', 'create', 'delete'];
+            }
+            foreach ($actions as $action) {
+                Permission::updateOrCreate(
+                    ['name' => "{$slug}.{$action}", 'guard_name' => 'web'],
+                    [
+                        'module_id'   => $inventoryModule->id,
+                        'menu_id'     => $inventoryMenu->id,
+                        'sub_menu_id' => null,
+                    ]
+                );
+            }
         }
         // Short List Order
         $shortListMenu = Menu::updateOrCreate(

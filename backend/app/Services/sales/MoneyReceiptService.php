@@ -6,7 +6,9 @@ use App\Models\sales\Customer;
 use App\Models\sales\MoneyReceipt;
 use App\Models\sales\Sale;
 use App\Models\sales\SaleReturn;
-use App\Models\softConfig\Lookup;
+use App\Models\accounting\ChartOfAc;
+use App\Models\accounting\JournalEntry;
+use App\Services\accounting\AutoJournalService;
 use App\Services\softConfig\ScrollCodeService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +20,7 @@ class MoneyReceiptService
 {
     const BANK_TYPES = ['2', '3']; // cheque, deposit into bank need a bank name
 
-    public function __construct(private ScrollCodeService $scrollCodes, private SaleService $sales)
+    public function __construct(private ScrollCodeService $scrollCodes, private SaleService $sales, private AutoJournalService $autoJournal)
     {
     }
 
@@ -104,7 +106,7 @@ class MoneyReceiptService
             'address'         => $customer->address,
             'total_due'       => $this->sales->customerDue($customer->id),
             'advance_balance' => $this->advanceBalance($customer->id),
-            'banks'           => Lookup::bankNames(),
+            'banks'           => ChartOfAc::bankOptions(),
             'lines'           => $lines,
         ];
     }
@@ -126,6 +128,10 @@ class MoneyReceiptService
 
         if (in_array($data['received_type'], self::BANK_TYPES) && empty($data['bank_name'])) {
             throw new \RuntimeException('Please select a Bank Name');
+        }
+        // the bank is a head of the Chart of Accounts (Cash At Bank), the journal posts to it
+        if (!empty($data['bank_name']) && !ChartOfAc::isBank($data['bank_name'])) {
+            throw new \RuntimeException('Bank Name is invalid.');
         }
 
         // same customer, date and lot saved in the last 30 seconds = double click
@@ -236,6 +242,9 @@ class MoneyReceiptService
                 MoneyReceipt::create($receiptData);
             }
 
+            // Cash Receive / Bank Receive voucher of this MR
+            $this->autoJournal->postMoneyReceipt($mrNo);
+
             DB::commit();
             return $mrNo;
         } catch (\Exception $e) {
@@ -326,6 +335,7 @@ class MoneyReceiptService
             'received_type'      => $first->received_type,
             'lot_amount'         => (float) $first->lot_amount,
             'bank_name'          => $first->bank_name,
+            'bank_title'         => ChartOfAc::bankTitle($first->bank_name),
             'customer_bank_name' => $first->customer_bank_name,
             'cheque_no'          => $first->cheque_no,
             'cheque_date'        => $chequeDate,
@@ -356,7 +366,11 @@ class MoneyReceiptService
             throw new \RuntimeException('The advance of this MR is already adjusted. Delete the Adjustment MR first.');
         }
 
-        MoneyReceipt::where('mr_no', $mrNo)->update(['deleted_by' => Auth::id(), 'deleted_at' => now()]);
+        DB::transaction(function () use ($mrNo) {
+            MoneyReceipt::where('mr_no', $mrNo)->update(['deleted_by' => Auth::id(), 'deleted_at' => now()]);
+            // like parts_bazar: the journal of this MR goes too
+            $this->autoJournal->remove([JournalEntry::MONEY_RECEIPT], $mrNo);
+        });
     }
 
     // parts_bazar customerAdvanceBalanceFromMR: advance lines minus what Adjustment MRs used

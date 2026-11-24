@@ -159,11 +159,10 @@ export function MoneyReceiptFormModal({ customerId, onClose, onSaved }: MoneyRec
 
   const advanceBalance = form ? form.advance_balance : 0;
 
-  const bankOptions: Option[] = [];
+  // bank heads of the Chart of Accounts (Cash At Bank), like parts_bazar
+  let bankOptions: Option[] = [];
   if (form) {
-    for (const name of form.banks) {
-      bankOptions.push({ value: name, label: name });
-    }
+    bankOptions = form.banks;
   }
 
   // parts_bazar: picking the receive type clears the rows and puts the whole due
@@ -377,7 +376,7 @@ export function MoneyReceiptFormModal({ customerId, onClose, onSaved }: MoneyRec
               <Field label="Bank Name" required={BANK_TYPES.includes(receivedType)}>
                 <ReactSelect
                   options={bankOptions}
-                  placeholder={bankOptions.length > 0 ? "Select" : "No bank yet (Configure > Lookups, type bank_name)"}
+                  placeholder={bankOptions.length > 0 ? "Select" : "No bank yet (Accounting > Chart Of Accounts, under Cash At Bank)"}
                   value={bankName || null}
                   isDisabled={noBank}
                   onChange={(value) => setBankName(value ? String(value) : "")}
@@ -528,8 +527,8 @@ export function MoneyReceiptVoucherModal({ mrNo, onClose }: { mrNo: string | nul
 
   // bank, cheque no and cheque date in one line
   let bankText = "";
-  if (receipt && receipt.bank_name) {
-    bankText = receipt.bank_name;
+  if (receipt && receipt.bank_title) {
+    bankText = receipt.bank_title;
     if (receipt.cheque_no) {
       bankText += ` / Cheque ${receipt.cheque_no}`;
     }

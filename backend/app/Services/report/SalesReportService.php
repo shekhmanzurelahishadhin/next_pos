@@ -2,6 +2,7 @@
 
 namespace App\Services\report;
 
+use App\Models\accounting\ChartOfAc;
 use App\Models\sales\MoneyReceipt;
 use App\Models\sales\Sale;
 use Carbon\Carbon;
@@ -295,7 +296,8 @@ class SalesReportService
         $query->select('money_receipts.mr_no')
             ->selectRaw('MIN(money_receipts.receipt_date) AS receipt_date')
             ->selectRaw('MIN(money_receipts.received_type) AS received_type')
-            ->selectRaw('MIN(money_receipts.bank_name) AS bank_name')
+            // the bank is a Chart of Accounts head, an old text name is shown as it is
+            ->selectRaw('MIN(COALESCE(bank_head.title, money_receipts.bank_name)) AS bank_name')
             ->selectRaw('MIN(customers.name) AS customer_name')
             ->selectRaw('SUM(money_receipts.amount) AS received_amount')
             ->selectRaw('SUM(money_receipts.discount) AS discount')
@@ -397,6 +399,7 @@ class SalesReportService
     {
         $query = DB::table('money_receipts')
             ->leftJoin('customers', 'customers.id', '=', 'money_receipts.customer_id')
+            ->leftJoin('chart_of_acs as bank_head', 'bank_head.id', '=', 'money_receipts.bank_name')
             ->whereNull('money_receipts.deleted_at')
             ->whereBetween('money_receipts.receipt_date', [$filters['start_date'], $filters['end_date']]);
 
@@ -432,7 +435,7 @@ class SalesReportService
             $labels['Collection Type'] = MoneyReceipt::TYPE_NAMES[$type] ?? $type;
         }
         if (!empty($filters['bank_name'])) {
-            $labels['Bank Name'] = $filters['bank_name'];
+            $labels['Bank Name'] = ChartOfAc::bankTitle($filters['bank_name']);
         }
         if (!empty($filters['customer_id'])) {
             $labels['Customer'] = $this->name('customers', $filters['customer_id']);

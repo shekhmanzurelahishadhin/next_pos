@@ -112,8 +112,18 @@ export interface VoucherDetail {
   lines: { id: number; transaction_type: number; amount: string; amount_in_foreign_currency: string; cost_center_id: number | null; account: Account; cost_center: CostCenterName }[];
 }
 
-// where an entry comes from, only manual vouchers for now
-export const ENTRY_SOURCES: Record<number, string> = { 1: "Manual" };
+// where an entry comes from (same numbers as parts_bazar); all but Manual are Auto Journal
+export const ENTRY_SOURCES: Record<number, string> = {
+  1: "Manual",
+  2: "Money Receipt",
+  3: "Sales",
+  4: "Sales Return",
+  5: "Sales Return (Refund)",
+  6: "Purchase",
+  7: "Purchase Return",
+  8: "Purchase Return (Refund)",
+  9: "Supplier Payment",
+};
 
 const URL = "/accounting/journal-entries";
 

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { formatDate } from "@/lib/format";
 import { ADJUSTMENT, PAYMENT_TYPES, paymentTypeName } from "@/lib/payment";
+import { api } from "@/lib/api";
 import { apiErrorMessage, filledFields, firstDayOfMonth, labelLines, loadOptions, Option, reportMoney, today } from "@/lib/report";
 import AccessRoute from "@/routes/AccessRoute";
 import PageBreadcrumb from "@/components/common/PageBreadCrumb";
@@ -68,15 +69,11 @@ export default function PaymentReportPage() {
     }
   }
 
-  // the bank is saved by name on the supplier payment, so the option value is the name
+  // the bank is a Chart of Accounts head (Cash At Bank) on the supplier payment, so the option value is its id
   async function loadBanks() {
     try {
-      const list = await loadOptions("/configure/lookups", { type: "bank_name" });
-      const bankOptions: Option[] = [];
-      for (const bank of list) {
-        bankOptions.push({ value: bank.label, label: bank.label });
-      }
-      setBanks(bankOptions);
+      const res = await api.get("/reports/banks");
+      setBanks(res.data.data);
     } catch {
       // the list is only a filter
     }
