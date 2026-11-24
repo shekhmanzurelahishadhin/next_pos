@@ -1071,6 +1071,22 @@ class ModuleMenuPermissionSeeder extends Seeder
             }
         }
 
+        // Voucher Signatory Setup: add and update only, no delete (same as parts_bazar)
+        $signatoryMenu = Menu::updateOrCreate(
+            ['name' => 'Voucher Signatory Setup', 'module_id' => $accountingModule->id],
+            ['slug' => 'voucher-signatory']
+        );
+        foreach (['view', 'create', 'edit'] as $action) {
+            Permission::updateOrCreate(
+                ['name' => "voucher-signatory.{$action}", 'guard_name' => 'web'],
+                [
+                    'module_id'   => $accountingModule->id,
+                    'menu_id'     => $signatoryMenu->id,
+                    'sub_menu_id' => null,
+                ]
+            );
+        }
+
         // the base heads of the Chart of Accounts and the BDT rate
         $this->call(ChartOfAcSeeder::class);
 

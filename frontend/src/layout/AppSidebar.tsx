@@ -153,6 +153,7 @@ const navItems: NavItem[] = [
       { group: "Configure", name: "Cheque Book", path: "/accounting/cheque-book", requiredPermissions: ["cheque-book.view", "cheque-book.create", "cheque-book.edit", "cheque-book.delete"] },
       { group: "Configure", name: "Cheque Book Delete History", path: "/accounting/cheque-book-delete-history", requiredPermissions: ["cheque-book-delete-history.view"] },
       { group: "Configure", name: "Voucher Type", path: "/accounting/voucher-type", requiredPermissions: ["voucher-type.view", "voucher-type.edit"] },
+      { group: "Configure", name: "Voucher Signatory Setup", path: "/accounting/voucher-signatory", requiredPermissions: ["voucher-signatory.view", "voucher-signatory.create", "voucher-signatory.edit"] },
       { group: "Voucher", name: "Voucher Entry", path: "/accounting/voucher-entry", requiredPermissions: ["voucher-entry.create"] },
       { group: "Voucher", name: "Voucher Manage", path: "/accounting/voucher-manage", requiredPermissions: ["voucher-entry.view", "voucher-entry.delete"] },
       { group: "Voucher", name: "Cheque Entry", path: "/accounting/cheque-entry", requiredPermissions: ["cheque-entry.view", "cheque-entry.edit"] },

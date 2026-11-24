@@ -110,6 +110,29 @@ export interface CostCenterPayload {
   status: string;
 }
 
+// ---------- Voucher Signatory Setup ----------
+
+export interface VoucherSignatory {
+  id: number;
+  voucher_type: number;
+  signatory_name: string;
+  order_qty: number;
+  status: number;
+  created_at: string | null;
+  updated_at: string | null;
+  type: { id: number; name: string } | null;
+  created_by: UserName;
+  updated_by: UserName;
+}
+
+export interface VoucherSignatoryPayload {
+  voucher_type: string;
+  signatory_name: string;
+  order_qty: string;
+  status: string;
+}
+
+const SIGNATORY = "/accounting/voucher-signatories";
 const COST_CATEGORY = "/accounting/cost-categories";
 const COST_CENTER = "/accounting/cost-centers";
 const VOUCHER_TYPE = "/accounting/voucher-types";
@@ -175,6 +198,20 @@ class AccountingSetupService {
 
   async deleteOpening(id: number) {
     await api.delete(`${OPENING}/${id}`);
+  }
+
+  async getSignatories(filters: Record<string, string | number> = {}): Promise<VoucherSignatory[]> {
+    const res = await api.get(SIGNATORY, { params: removeEmpty(filters) });
+    return res.data.data;
+  }
+
+  // status goes only on update, a new signatory is always Active
+  async saveSignatory(data: VoucherSignatoryPayload, id?: number) {
+    if (id) {
+      await api.put(`${SIGNATORY}/${id}`, data);
+    } else {
+      await api.post(SIGNATORY, { voucher_type: data.voucher_type, signatory_name: data.signatory_name, order_qty: data.order_qty });
+    }
   }
 
   async getCostCategories(filters: Record<string, string | number> = {}): Promise<CostCategory[]> {

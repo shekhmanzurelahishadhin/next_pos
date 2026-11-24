@@ -46,6 +46,7 @@ use App\Http\Controllers\api\accounting\CostCenterController;
 use App\Http\Controllers\api\accounting\ChequeBookController;
 use App\Http\Controllers\api\accounting\ChequeEntryController;
 use App\Http\Controllers\api\accounting\JournalEntryController;
+use App\Http\Controllers\api\accounting\VoucherSignatoryController;
 use App\Helpers\ApiResponse;
 
 
@@ -258,6 +259,13 @@ Route::prefix('v1')->group(function () {
             Route::prefix('voucher-types')->group(function () {
                 Route::get('/', [VoucherTypeController::class, 'index']);
                 Route::put('/{voucherType}', [VoucherTypeController::class, 'update']);
+            });
+
+            // Voucher Signatory Setup (add and update only)
+            Route::prefix('voucher-signatories')->group(function () {
+                Route::get('/', [VoucherSignatoryController::class, 'index']);
+                Route::post('/', [VoucherSignatoryController::class, 'store']);
+                Route::put('/{voucherSignatory}', [VoucherSignatoryController::class, 'update']);
             });
 
             // Cost Category and Cost Center (add and update only)
